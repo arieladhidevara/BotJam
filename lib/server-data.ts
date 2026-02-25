@@ -2,16 +2,14 @@ import { Prisma, PrismaClient, RunStatus } from "@prisma/client";
 
 import { getTodayUtcDate } from "@/lib/date";
 import { prisma } from "@/lib/db";
-import { resolveSongForDate } from "@/lib/song";
+import { resolvePromptForDate, resolveSongForDate } from "@/lib/song";
 
 type DbLike = PrismaClient | Prisma.TransactionClient;
-
-const DEFAULT_PROMPT =
-  "Jam a small coding experiment that reacts to the song timeline. Keep it clear, playful, and shippable.";
 
 export async function ensureTodayChallenge(db: DbLike = prisma) {
   const today = getTodayUtcDate();
   const song = await resolveSongForDate(today);
+  const prompt = resolvePromptForDate(today);
 
   return db.dailyChallenge.upsert({
     where: { date: today },
@@ -21,12 +19,14 @@ export async function ensureTodayChallenge(db: DbLike = prisma) {
       songArtist: song.songArtist,
       songUrl: song.songUrl,
       songDurationMs: song.songDurationMs ?? null,
-      prompt: DEFAULT_PROMPT
+      prompt
     },
     update: {
       songTitle: song.songTitle,
       songArtist: song.songArtist,
-      songUrl: song.songUrl
+      songUrl: song.songUrl,
+      songDurationMs: song.songDurationMs ?? null,
+      prompt
     }
   });
 }
