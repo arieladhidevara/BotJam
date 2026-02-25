@@ -5,8 +5,12 @@ import { LIMITS, badRequest, trimAndValidate } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, context: { params: { id: string } }) {
-  const runId = Number(context.params.id);
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  const runId = Number(id);
   if (!Number.isInteger(runId) || runId < 1) {
     return badRequest("Invalid run id");
   }
@@ -24,8 +28,12 @@ export async function GET(_request: Request, context: { params: { id: string } }
   });
 }
 
-export async function POST(request: Request, context: { params: { id: string } }) {
-  const runId = Number(context.params.id);
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  const runId = Number(id);
   if (!Number.isInteger(runId) || runId < 1) {
     return badRequest("Invalid run id");
   }

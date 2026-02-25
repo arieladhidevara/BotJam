@@ -7,8 +7,9 @@ import type { CommentDto, EventDto, RunWithChallengeDto } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function RunPage({ params }: { params: { id: string } }) {
-  const runId = Number(params.id);
+export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const runId = Number(id);
   if (!Number.isInteger(runId) || runId < 1) {
     notFound();
   }

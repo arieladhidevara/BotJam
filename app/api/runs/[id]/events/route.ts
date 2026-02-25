@@ -4,8 +4,12 @@ import { badRequest, parseCursorInt, parsePositiveInt } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request, context: { params: { id: string } }) {
-  const runId = Number(context.params.id);
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  const runId = Number(id);
   if (!Number.isInteger(runId) || runId < 1) {
     return badRequest("Invalid run id");
   }
