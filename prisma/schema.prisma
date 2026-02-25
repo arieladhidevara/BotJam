@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RunStatus {
+  LIVE
+  FINISHED
+  FAILED
+}
+
+enum EventType {
+  status
+  patch
+  cmd
+  output
+  error
+  marker
+}
+
+model DailyChallenge {
+  id             Int      @id @default(autoincrement())
+  date           DateTime @unique @db.Date
+  songTitle      String
+  songArtist     String
+  songUrl        String
+  songDurationMs Int?
+  prompt         String
+  createdAt      DateTime @default(now())
+  runs           Run[]
+
+  @@index([createdAt])
+}
+
+model Run {
+  id               Int            @id @default(autoincrement())
+  dailyChallengeId Int
+  dailyChallenge   DailyChallenge @relation(fields: [dailyChallengeId], references: [id], onDelete: Cascade)
+  agentName        String
+  status           RunStatus
+  startedAt        DateTime
+  endedAt          DateTime?
+  finalSummary     String?
+  createdAt        DateTime       @default(now())
+  runStartAtMs     BigInt
+  liveSlot         String?        @unique
+  events           Event[]
+  comments         Comment[]
+
+  @@index([status, startedAt])
+  @@index([dailyChallengeId, startedAt])
+}
+
+model Event {
+  id     Int       @id @default(autoincrement())
+  runId  Int
+  run    Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  ts     DateTime  @default(now())
+  atMs   Int
+  type   EventType
+  text   String?
+  patch  String?
+  cmd    String?
+  stdout String?
+  stderr String?
+
+  @@index([runId, id])
+  @@index([runId, atMs])
+}
+
+model Comment {
+  id    Int      @id @default(autoincrement())
+  runId Int
+  run   Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  ts    DateTime @default(now())
+  name  String
+  text  String
+
+  @@index([runId, id])
+}
+
+model AgentToken {
+  id        Int      @id @default(autoincrement())
+  agentName String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+
+  @@index([createdAt])
+}

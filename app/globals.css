@@ -1,0 +1,176 @@
+:root {
+  --bg: #f6f2e8;
+  --card: #fffdf8;
+  --text: #181612;
+  --muted: #655b4e;
+  --accent: #0f8e6f;
+  --danger: #9f2f2f;
+  --border: #d8cebc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-heading), sans-serif;
+  background:
+    radial-gradient(circle at 10% 10%, #fdf6c9 0%, transparent 40%),
+    radial-gradient(circle at 90% 20%, #d7f1eb 0%, transparent 35%),
+    var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+
+.page {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 0.65rem;
+  letter-spacing: 0.02em;
+}
+
+.meta {
+  margin: 0.2rem 0;
+  color: var(--muted);
+}
+
+.prompt {
+  margin: 0.75rem 0;
+}
+
+.live {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.idle {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.feed,
+.archive,
+.comments,
+.warnings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.feed li,
+.archive li,
+.comments li {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.6rem 0.7rem;
+  background: #fff;
+}
+
+.time {
+  display: inline-block;
+  min-width: 3.4rem;
+  font-family: var(--font-mono), monospace;
+  color: var(--muted);
+}
+
+.type {
+  display: inline-block;
+  min-width: 4rem;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+
+.line {
+  font-size: 0.95rem;
+}
+
+pre,
+code {
+  font-family: var(--font-mono), monospace;
+}
+
+pre {
+  background: #121212;
+  color: #edffd6;
+  border-radius: 10px;
+  padding: 0.7rem;
+  margin: 0.5rem 0 0;
+  overflow-x: auto;
+}
+
+.code {
+  min-height: 180px;
+}
+
+.comment-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+input,
+textarea,
+button,
+audio {
+  width: 100%;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.7rem;
+}
+
+button {
+  background: #f2fbf8;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.error {
+  color: var(--danger);
+  margin: 0;
+}
+
+.warnings li {
+  border: 1px solid #e8b0b0;
+  color: var(--danger);
+  padding: 0.4rem 0.5rem;
+  border-radius: 10px;
+  background: #fff2f2;
+}
