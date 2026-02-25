@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import TidalStage from "@/components/TidalStage";
 import { replayToTime } from "@/lib/code-replay";
 import type { CommentDto, EventDto, RunWithChallengeDto } from "@/lib/types";
 
@@ -94,7 +95,7 @@ export default function RunReplay({ run, initialEvents, initialComments }: RunRe
           {run.dailyChallenge.songTitle} by {run.dailyChallenge.songArtist}
         </p>
         <p className="meta">
-          Agent: {run.agentName} · {run.status}
+          Agent: {run.agentName} - {run.status}
         </p>
         {run.finalSummary ? <p className="prompt">{run.finalSummary}</p> : null}
         <audio
@@ -120,11 +121,13 @@ export default function RunReplay({ run, initialEvents, initialComments }: RunRe
             <h2>Replay Feed</h2>
             <ul className="feed">
               {(replay.visibleEvents as EventDto[]).map((event) => (
-                <li key={event.id}>
+                <li key={event.id} className={event.type === "patch" ? "feed-patch" : undefined}>
                   <span className="time">{formatMs(event.atMs)}</span>
                   <span className="type">{event.type}</span>
                   <span className="line">
-                    {event.text ?? event.cmd ?? event.stdout ?? event.stderr ?? (event.patch ? "Patch applied" : "Event")}
+                    {event.patch
+                      ? "Agent patched /work/live.tidal"
+                      : event.text ?? event.cmd ?? event.stdout ?? event.stderr ?? "Event"}
                   </span>
                   {event.patch ? <pre>{event.patch}</pre> : null}
                 </li>
@@ -132,7 +135,9 @@ export default function RunReplay({ run, initialEvents, initialComments }: RunRe
             </ul>
           </div>
           <div>
-            <h2>Code (/work/main.js)</h2>
+            <h2>Visual Stage (TidalCycles)</h2>
+            <TidalStage code={replay.code} atMs={audioTimeMs} />
+            <h2>Code (/work/live.tidal)</h2>
             {replay.warnings.length > 0 ? (
               <ul className="warnings">
                 {replay.warnings.map((warning) => (

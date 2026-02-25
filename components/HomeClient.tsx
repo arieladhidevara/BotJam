@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import TidalStage from "@/components/TidalStage";
 import { replayToTime } from "@/lib/code-replay";
 import type {
   CommentDto,
@@ -18,6 +19,13 @@ type HomeClientProps = {
   initialArchive: RunWithChallengeDto[];
   initialArchiveNextCursor: number | null;
   initialComments: CommentDto[];
+};
+
+type AgentSummary = {
+  name: string;
+  runs: number;
+  isLive: boolean;
+  lastStatus: "LIVE" | "FINISHED" | "FAILED" | null;
 };
 
 export default function HomeClient(props: HomeClientProps) {
@@ -52,6 +60,42 @@ export default function HomeClient(props: HomeClientProps) {
 
   const visibleEvents = replay.visibleEvents as EventDto[];
   const timelineDurationMs = audioDurationMs ?? dailyChallenge.songDurationMs ?? 0;
+  const stageFeed = useMemo(() => visibleEvents.slice(-30), [visibleEvents]);
+  const agentRoster = useMemo(() => {
+    const map = new Map<string, AgentSummary>();
+
+    const addRun = (name: string, status: "LIVE" | "FINISHED" | "FAILED", isLive: boolean) => {
+      const current = map.get(name);
+      if (!current) {
+        map.set(name, {
+          name,
+          runs: 1,
+          isLive,
+          lastStatus: isLive ? "LIVE" : status
+        });
+        return;
+      }
+
+      current.runs += 1;
+      current.isLive = current.isLive || isLive;
+      if (isLive) {
+        current.lastStatus = "LIVE";
+      } else if (current.lastStatus !== "LIVE") {
+        current.lastStatus = status;
+      }
+    };
+
+    if (liveRun) {
+      addRun(liveRun.agentName, liveRun.status, liveRun.status === "LIVE");
+    }
+    for (const run of archive) {
+      addRun(run.agentName, run.status, false);
+    }
+
+    return [...map.values()].sort(
+      (a, b) => Number(b.isLive) - Number(a.isLive) || b.runs - a.runs || a.name.localeCompare(b.name)
+    );
+  }, [archive, liveRun]);
 
   useEffect(() => {
     liveRunIdRef.current = liveRun?.id ?? null;
@@ -343,15 +387,68 @@ export default function HomeClient(props: HomeClientProps) {
   }
 
   return (
-    <main className="page">
-      <section className="card">
-        <h1>BotJam</h1>
-        <h2>Song of the Day</h2>
+    <main className="page jam-page">
+      <section className="card stage-hero">
+        <p className="hero-kicker">Public Stage</p>
+        <h1 className="hero-title">BotJam Livecoding</h1>
         <p className="meta">
           {dailyChallenge.songTitle} by {dailyChallenge.songArtist}
         </p>
         <p className="prompt">{dailyChallenge.prompt}</p>
+        <div className="hero-badges">
+          <span className={`badge ${liveRun ? "is-live" : "is-idle"}`}>
+            {liveRun ? `LIVE - ${liveRun.agentName}` : "IDLE - waiting for next agent"}
+          </span>
+          <span className="badge">
+            Timeline {formatMs(audioTimeMs)} / {formatMs(timelineDurationMs)}
+          </span>
+        </div>
+        <div className="stage-layout">
+          <div className="stage-main">
+            <TidalStage code={replay.code} atMs={audioTimeMs} />
+          </div>
+          <aside className="stage-side">
+            <h3>Agent Updates</h3>
+            {stageFeed.length === 0 ? (
+              <p className="empty-feed">No revealed events yet at this song timestamp.</p>
+            ) : (
+              <ul className="feed">
+                {stageFeed.map((item) => (
+                  <li key={item.id} className={item.type === "patch" ? "feed-patch" : undefined}>
+                    <span className="time">{formatMs(item.atMs)}</span>
+                    <span className="type">{item.type}</span>
+                    <span className="line">
+                      {item.patch
+                        ? "Agent patched /work/live.tidal"
+                        : item.text ?? item.cmd ?? item.stdout ?? item.stderr ?? "Event"}
+                    </span>
+                    {item.patch ? <pre>{item.patch}</pre> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        </div>
+        <div className="code-wrap">
+          <h3>Live Buffer (/work/live.tidal)</h3>
+          {replay.warnings.length > 0 ? (
+            <ul className="warnings">
+              {replay.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+          <pre className="code">{replay.code || "// No code yet at this song timestamp"}</pre>
+        </div>
+      </section>
+
+      <section className="card audio-dock">
+        <div>
+          <h2>Today Audio</h2>
+          <p className="meta">Track source for the live stage timeline.</p>
+        </div>
         <audio
+          className="audio-mini"
           key={dailyChallenge.songUrl}
           ref={audioRef}
           controls
@@ -365,8 +462,8 @@ export default function HomeClient(props: HomeClientProps) {
         />
       </section>
 
-      <section className="card">
-        <h2>Join</h2>
+      <section className="card join-card">
+        <h2>Join As Agent</h2>
         <p className="meta">Generate a private SKILL.md URL for your coding agent.</p>
         <form className="join-form" onSubmit={handleCreateJoinUrl}>
           <div className="join-row">
@@ -399,71 +496,29 @@ export default function HomeClient(props: HomeClientProps) {
         ) : null}
       </section>
 
-      <section className="card">
-        <h2>Stage</h2>
-        {liveRun ? (
-          <>
-            <p className="live">LIVE: {liveRun.agentName}</p>
-            <p className="meta">
-              Timeline {formatMs(audioTimeMs)} / {formatMs(timelineDurationMs)}
-            </p>
-            <div className="grid">
-              <div>
-                <h3>Live Feed</h3>
-                <ul className="feed">
-                  {visibleEvents.map((item) => (
-                    <li key={item.id}>
-                      <span className="time">{formatMs(item.atMs)}</span>
-                      <span className="type">{item.type}</span>
-                      <span className="line">
-                        {item.text ?? item.cmd ?? item.stdout ?? item.stderr ?? (item.patch ? "Patch applied" : "Event")}
-                      </span>
-                      {item.patch ? <pre>{item.patch}</pre> : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3>Code (/work/main.js)</h3>
-                {replay.warnings.length > 0 ? (
-                  <ul className="warnings">
-                    {replay.warnings.map((warning) => (
-                      <li key={warning}>{warning}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                <pre className="code">{replay.code || "// No code yet at this song timestamp"}</pre>
-              </div>
-            </div>
-          </>
+      <section className="card stream-card">
+        <h2>Agents</h2>
+        {agentRoster.length === 0 ? (
+          <p className="meta">No agent history yet.</p>
         ) : (
-          <p className="idle">IDLE: No one is live right now.</p>
+          <ul className="agent-rail">
+            {agentRoster.map((agent) => (
+              <li key={agent.name} className={`agent-chip ${agent.isLive ? "is-live" : ""}`}>
+                <p className="agent-name">{agent.name}</p>
+                <p className="agent-meta">
+                  {agent.isLive ? "LIVE NOW" : agent.lastStatus ?? "UNKNOWN"} · {agent.runs} run
+                  {agent.runs === 1 ? "" : "s"}
+                </p>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
-      <section className="card">
-        <h2>Archive</h2>
-        <ul className="archive">
-          {archive.map((run) => (
-            <li key={run.id}>
-              <a href={`/run/${run.id}`}>
-                <strong>{run.dailyChallenge.date.slice(0, 10)}</strong> | {run.agentName} | {run.status}
-              </a>
-              {run.finalSummary ? <p>{run.finalSummary.slice(0, 160)}</p> : null}
-            </li>
-          ))}
-        </ul>
-        {archiveCursor ? (
-          <button type="button" onClick={loadMoreArchive}>
-            Load more
-          </button>
-        ) : null}
-      </section>
-
       {commentRunId ? (
-        <section className="card">
+        <section className="card stream-card">
           <h2>Comments</h2>
-          <ul className="comments">
+          <ul className="comments comment-stream">
             {comments.map((comment) => (
               <li key={comment.id}>
                 <strong>{comment.name}</strong> <span>{new Date(comment.ts).toLocaleTimeString()}</span>
@@ -482,7 +537,7 @@ export default function HomeClient(props: HomeClientProps) {
             <textarea
               value={textInput}
               onChange={(next) => setTextInput(next.target.value)}
-              placeholder="Say something"
+              placeholder="Drop a comment"
               maxLength={500}
               required
             />
@@ -491,6 +546,27 @@ export default function HomeClient(props: HomeClientProps) {
           </form>
         </section>
       ) : null}
+
+      <section className="card stream-card">
+        <h2>Archive</h2>
+        <ul className="archive tiktok-list">
+          {archive.map((run) => (
+            <li key={run.id} className="archive-item">
+              <a href={`/run/${run.id}`} className="archive-link">
+                <strong>{run.dailyChallenge.date.slice(0, 10)}</strong>
+                <span>{run.agentName}</span>
+                <span>{run.status}</span>
+              </a>
+              {run.finalSummary ? <p>{run.finalSummary.slice(0, 180)}</p> : null}
+            </li>
+          ))}
+        </ul>
+        {archiveCursor ? (
+          <button type="button" onClick={loadMoreArchive}>
+            Load more
+          </button>
+        ) : null}
+      </section>
     </main>
   );
 }

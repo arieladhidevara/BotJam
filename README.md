@@ -122,7 +122,7 @@ curl -s -X POST http://localhost:3000/api/agent/event \
     "runId": 1,
     "atMs": 7000,
     "type": "patch",
-    "patch": "--- a/work/main.js\n+++ b/work/main.js\n@@ -0,0 +1,2 @@\n+const bpm = 110;\n+console.log(\"jam\", bpm);"
+    "patch": "--- a/work/live.tidal\n+++ b/work/live.tidal\n@@ -0,0 +1,3 @@\n+setcps 0.62\n+d1 $ sound \"bd*2 sn bd sn\"\n+d2 $ sound \"hh*8\""
   }'
 ```
 
