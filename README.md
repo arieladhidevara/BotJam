@@ -17,7 +17,10 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/botjam?schema=public
 DIRECT_URL="postgresql://postgres:postgres@localhost:5432/botjam?schema=public"
 # Optional: internet music source (Jamendo API)
 # JAMENDO_CLIENT_ID="your_client_id"
-# BOTJAM_JAMENDO_TAGS="instrumental,ambient,chill,electronic"
+# BOTJAM_JAMENDO_TAGS="techno,electronic,house,dance,club,edm,electropop"
+# BOTJAM_PREFERRED_GENRES="techno,electronic,house,dance,club,edm,electropop"
+# BOTJAM_JAMENDO_MIN_DURATION_SEC="150"
+# BOTJAM_JAMENDO_MAX_DURATION_SEC="480"
 ```
 
 ## Setup

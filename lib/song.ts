@@ -29,7 +29,13 @@ type JamendoTrack = {
   sourceUrl?: string;
   license?: string;
   downloadUrl: string;
+  genreScore: number;
 };
+
+const DEFAULT_JAMENDO_TAGS = "techno,electronic,house,dance,club,edm,electropop";
+const DEFAULT_PREFERRED_GENRES = ["techno", "electronic", "house", "dance", "club", "edm", "electropop"];
+const DEFAULT_MIN_DURATION_SEC = 150;
+const DEFAULT_MAX_DURATION_SEC = 480;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -142,7 +148,8 @@ async function resolveApiSongForDate(stamp: string, songsDir: string): Promise<S
         return null;
       }
 
-      const selected = pickDeterministic(tracks, `jamendo:${stamp}`);
+      const selectionPool = tracks.slice(0, Math.min(20, tracks.length));
+      const selected = pickDeterministic(selectionPool, `jamendo:${stamp}`);
       await mkdir(dailyDir, { recursive: true });
       await downloadToFile(selected.downloadUrl, songPath);
 
@@ -230,41 +237,122 @@ async function resolveLocalLibrarySong(stamp: string, songsDir: string): Promise
 }
 
 async function fetchJamendoTracks(clientId: string): Promise<JamendoTrack[]> {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    format: "json",
-    limit: "100",
-    include: "licenses+musicinfo",
-    audioformat: "mp32",
-    order: "popularity_total",
-    fuzzytags: process.env.BOTJAM_JAMENDO_TAGS ?? "instrumental,ambient,chill,electronic"
-  });
+  const fuzzyTags = process.env.BOTJAM_JAMENDO_TAGS ?? DEFAULT_JAMENDO_TAGS;
+  const preferredGenres = parseCsvList(process.env.BOTJAM_PREFERRED_GENRES ?? DEFAULT_PREFERRED_GENRES.join(","));
+  const minDurationSec = parsePositiveIntEnv("BOTJAM_JAMENDO_MIN_DURATION_SEC", DEFAULT_MIN_DURATION_SEC);
+  const maxDurationSec = parsePositiveIntEnv("BOTJAM_JAMENDO_MAX_DURATION_SEC", DEFAULT_MAX_DURATION_SEC);
 
-  const response = await fetch(`https://api.jamendo.com/v3.0/tracks/?${params.toString()}`, {
-    headers: {
-      Accept: "application/json"
-    },
-    cache: "no-store"
-  });
+  const requestedTags = parseCsvList(fuzzyTags);
+  const tagCandidates = Array.from(
+    new Set(
+      [
+        fuzzyTags,
+        requestedTags[0],
+        preferredGenres[0],
+        "electronic"
+      ].filter((value): value is string => typeof value === "string" && value.length > 0)
+    )
+  );
 
-  if (!response.ok) {
-    return [];
+  for (const candidate of tagCandidates) {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      format: "json",
+      limit: "100",
+      include: "licenses+musicinfo",
+      audioformat: "mp32",
+      order: "popularity_total",
+      fuzzytags: candidate
+    });
+
+    const response = await fetch(`https://api.jamendo.com/v3.0/tracks/?${params.toString()}`, {
+      headers: {
+        Accept: "application/json"
+      },
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      continue;
+    }
+
+    const payload = (await response.json()) as unknown;
+    if (!payload || typeof payload !== "object") {
+      continue;
+    }
+
+    const results = (payload as { results?: unknown }).results;
+    if (!Array.isArray(results) || results.length === 0) {
+      continue;
+    }
+
+    const tracks = extractJamendoTracks(results, preferredGenres, minDurationSec, maxDurationSec);
+    if (tracks.length === 0) {
+      continue;
+    }
+
+    const styledTracks = tracks.filter((track) => track.genreScore > 0);
+    const pool = styledTracks.length > 0 ? styledTracks : tracks;
+    pool.sort((a, b) => b.genreScore - a.genreScore);
+    return pool;
   }
 
-  const payload = (await response.json()) as unknown;
-  if (!payload || typeof payload !== "object") {
-    return [];
+  return [];
+}
+
+function parseCsvList(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => normalizeTag(part))
+    .filter((part) => part.length > 0);
+}
+
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function extractStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function normalizeTag(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function calculateGenreScore(tags: string[], preferredGenres: string[]): number {
+  if (tags.length === 0 || preferredGenres.length === 0) return 0;
+
+  const tagSet = new Set(tags.map((tag) => normalizeTag(tag)));
+  let score = 0;
+  for (const preferred of preferredGenres) {
+    if (tagSet.has(normalizeTag(preferred))) {
+      score += 1;
+    }
   }
 
-  const results = (payload as { results?: unknown }).results;
-  if (!Array.isArray(results)) {
-    return [];
-  }
+  return score;
+}
 
+function extractJamendoTracks(
+  rows: unknown[],
+  preferredGenres: string[],
+  minDurationSec: number,
+  maxDurationSec: number
+): JamendoTrack[] {
   const tracks: JamendoTrack[] = [];
-  for (const item of results) {
+
+  for (const item of rows) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
+
+    if (typeof row.audiodownload_allowed === "boolean" && !row.audiodownload_allowed) {
+      continue;
+    }
 
     const downloadUrl =
       (typeof row.audiodownload === "string" && row.audiodownload) ||
@@ -272,9 +360,6 @@ async function fetchJamendoTracks(clientId: string): Promise<JamendoTrack[]> {
       "";
 
     if (!downloadUrl || !downloadUrl.startsWith("http")) continue;
-
-    const title = typeof row.name === "string" && row.name ? row.name : "Untitled Jam";
-    const artist = typeof row.artist_name === "string" && row.artist_name ? row.artist_name : "Unknown Artist";
 
     const durationRaw = row.duration;
     const durationSec =
@@ -284,13 +369,32 @@ async function fetchJamendoTracks(clientId: string): Promise<JamendoTrack[]> {
           ? Number(durationRaw)
           : NaN;
 
+    if (Number.isFinite(durationSec) && (durationSec < minDurationSec || durationSec > maxDurationSec)) {
+      continue;
+    }
+
+    const title = typeof row.name === "string" && row.name ? row.name : "Untitled Jam";
+    const artist = typeof row.artist_name === "string" && row.artist_name ? row.artist_name : "Unknown Artist";
+
+    const musicInfo = row.musicinfo;
+    const tagsObject =
+      musicInfo && typeof musicInfo === "object" && (musicInfo as Record<string, unknown>).tags
+        ? ((musicInfo as Record<string, unknown>).tags as Record<string, unknown>)
+        : null;
+
+    const genreTags = tagsObject ? extractStringArray(tagsObject.genres) : [];
+    const varTags = tagsObject ? extractStringArray(tagsObject.vartags) : [];
+    const normalizedTags = [...genreTags, ...varTags].map(normalizeTag);
+    const genreScore = calculateGenreScore(normalizedTags, preferredGenres);
+
     tracks.push({
       title,
       artist,
       durationMs: Number.isFinite(durationSec) ? Math.max(0, Math.round(durationSec * 1000)) : undefined,
       sourceUrl: typeof row.shareurl === "string" ? row.shareurl : downloadUrl,
       license: typeof row.license_ccurl === "string" ? row.license_ccurl : "Jamendo License",
-      downloadUrl
+      downloadUrl,
+      genreScore
     });
   }
 
