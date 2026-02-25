@@ -125,6 +125,23 @@ async function resolveApiSongForDate(stamp: string, songsDir: string): Promise<S
     return null;
   }
 
+  const preferRemoteOnly = process.env.VERCEL === "1" || process.env.BOTJAM_DISABLE_LOCAL_SONG_CACHE === "1";
+  if (preferRemoteOnly) {
+    const tracks = await fetchJamendoTracks(clientId);
+    if (tracks.length === 0) return null;
+
+    const selectionPool = tracks.slice(0, Math.min(20, tracks.length));
+    const selected = pickDeterministic(selectionPool, `jamendo:${stamp}`);
+    return {
+      songTitle: selected.title,
+      songArtist: selected.artist,
+      songUrl: selected.downloadUrl,
+      songDurationMs: selected.durationMs,
+      sourceUrl: selected.sourceUrl,
+      license: selected.license
+    };
+  }
+
   const dailyDir = path.join(songsDir, "daily");
   const songPath = path.join(dailyDir, `${stamp}.mp3`);
   const songUrl = `/songs/daily/${stamp}.mp3`;

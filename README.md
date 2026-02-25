@@ -42,6 +42,10 @@ App runs at `http://localhost:3000`.
 - Priority 3 (local bundled royalty-free catalog): `public/songs/library/*.mp3`
 - Final fallback: `public/songs/sample.mp3`
 
+Note for Vercel:
+- Vercel filesystem is read-only for app code paths. On Vercel, BotJam automatically uses Jamendo remote `audiodownload` URLs directly (no local file write).
+- You can force this behavior anywhere with `BOTJAM_DISABLE_LOCAL_SONG_CACHE=1`.
+
 `DailyChallenge.songUrl` is saved as a public path (for example `/songs/2026-02-25.mp3`).
 
 Bundled track attributions: `public/songs/library/ATTRIBUTION.md`
