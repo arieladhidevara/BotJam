@@ -36,6 +36,8 @@ const DEFAULT_JAMENDO_TAGS = "techno,electronic,house,dance,club,edm,electropop"
 const DEFAULT_PREFERRED_GENRES = ["techno", "electronic", "house", "dance", "club", "edm", "electropop"];
 const DEFAULT_MIN_DURATION_SEC = 150;
 const DEFAULT_MAX_DURATION_SEC = 480;
+const DISALLOWED_LOCAL_ARTISTS = ["kevin macleod"];
+const DISALLOWED_LOCAL_TITLES = ["long trail"];
 
 declare global {
   // eslint-disable-next-line no-var
@@ -83,6 +85,7 @@ export function resolvePromptForDate(date: Date): string {
 export async function resolveSongForDate(date: Date): Promise<SongSelection> {
   const stamp = toDateStamp(date);
   const songsDir = path.join(process.cwd(), "public", "songs");
+  const jamendoEnabled = Boolean(process.env.JAMENDO_CLIENT_ID?.trim());
   const datedMp3Path = path.join(songsDir, `${stamp}.mp3`);
   const datedWavPath = path.join(songsDir, `${stamp}.wav`);
 
@@ -107,9 +110,13 @@ export async function resolveSongForDate(date: Date): Promise<SongSelection> {
     return apiSong;
   }
 
-  const localSong = await resolveLocalLibrarySong(stamp, songsDir);
-  if (localSong) {
-    return localSong;
+  // When Jamendo is configured, avoid falling back to bundled library tracks.
+  // This keeps daily selection aligned with requested DJ/techno style from API tags.
+  if (!jamendoEnabled) {
+    const localSong = await resolveLocalLibrarySong(stamp, songsDir);
+    if (localSong) {
+      return localSong;
+    }
   }
 
   return {
@@ -232,6 +239,9 @@ async function resolveLocalLibrarySong(stamp: string, songsDir: string): Promise
   const available: RoyaltyFreeTrack[] = [];
 
   for (const track of ROYALTY_FREE_LIBRARY) {
+    if (isDisallowedLocalTrack(track)) {
+      continue;
+    }
     const filePath = path.join(songsDir, "library", track.fileName);
     if (await fileExists(filePath)) {
       available.push(track);
@@ -309,9 +319,12 @@ async function fetchJamendoTracks(clientId: string): Promise<JamendoTrack[]> {
     }
 
     const styledTracks = tracks.filter((track) => track.genreScore > 0);
-    const pool = styledTracks.length > 0 ? styledTracks : tracks;
-    pool.sort((a, b) => b.genreScore - a.genreScore);
-    return pool;
+    if (styledTracks.length === 0) {
+      continue;
+    }
+
+    styledTracks.sort((a, b) => b.genreScore - a.genreScore);
+    return styledTracks;
   }
 
   return [];
@@ -339,6 +352,15 @@ function extractStringArray(value: unknown): string[] {
 
 function normalizeTag(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function isDisallowedLocalTrack(track: RoyaltyFreeTrack): boolean {
+  const artist = normalizeTag(track.artist);
+  const title = normalizeTag(track.title);
+  return (
+    DISALLOWED_LOCAL_ARTISTS.some((name) => artist.includes(name)) ||
+    DISALLOWED_LOCAL_TITLES.some((name) => title.includes(name))
+  );
 }
 
 function calculateGenreScore(tags: string[], preferredGenres: string[]): number {

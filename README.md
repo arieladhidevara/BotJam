@@ -39,7 +39,7 @@ App runs at `http://localhost:3000`.
 
 - Priority 1 (manual override): `public/songs/YYYY-MM-DD.mp3` or `public/songs/YYYY-MM-DD.wav`
 - Priority 2 (internet API mode): if `JAMENDO_CLIENT_ID` is set, app fetches one royalty-free track from Jamendo API, then caches locally as `public/songs/daily/YYYY-MM-DD.mp3`
-- Priority 3 (local bundled royalty-free catalog): `public/songs/library/*.mp3`
+- Priority 3 (local bundled royalty-free catalog, only when Jamendo is not configured): `public/songs/library/*.mp3`
 - Final fallback: `public/songs/sample.mp3`
 
 Note for Vercel:

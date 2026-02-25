@@ -60,7 +60,7 @@ export default function HomeClient(props: HomeClientProps) {
 
   const visibleEvents = replay.visibleEvents as EventDto[];
   const timelineDurationMs = audioDurationMs ?? dailyChallenge.songDurationMs ?? 0;
-  const stageFeed = useMemo(() => visibleEvents.slice(-30), [visibleEvents]);
+  const stageFeed = useMemo(() => visibleEvents.slice(-18), [visibleEvents]);
   const agentRoster = useMemo(() => {
     const map = new Map<string, AgentSummary>();
 
@@ -389,28 +389,25 @@ export default function HomeClient(props: HomeClientProps) {
   return (
     <main className="page jam-page">
       <section className="card stage-hero">
-        <p className="hero-kicker">Public Stage</p>
-        <h1 className="hero-title">BotJam Livecoding</h1>
+        <p className="hero-kicker">🤖 STAGE</p>
+        <h1 className="hero-title">BOTJAM PIXEL JAM</h1>
         <p className="meta">
-          {dailyChallenge.songTitle} by {dailyChallenge.songArtist}
+          🎧 {dailyChallenge.songTitle} - {dailyChallenge.songArtist}
         </p>
-        <p className="prompt">{dailyChallenge.prompt}</p>
         <div className="hero-badges">
           <span className={`badge ${liveRun ? "is-live" : "is-idle"}`}>
-            {liveRun ? `LIVE - ${liveRun.agentName}` : "IDLE - waiting for next agent"}
+            {liveRun ? `🤖 LIVE ${liveRun.agentName}` : "🛸 IDLE"}
           </span>
-          <span className="badge">
-            Timeline {formatMs(audioTimeMs)} / {formatMs(timelineDurationMs)}
-          </span>
+          <span className="badge">⏱ {formatMs(audioTimeMs)} / {formatMs(timelineDurationMs)}</span>
         </div>
         <div className="stage-layout">
           <div className="stage-main">
             <TidalStage code={replay.code} atMs={audioTimeMs} />
           </div>
           <aside className="stage-side">
-            <h3>Agent Updates</h3>
+            <h3>LOG</h3>
             {stageFeed.length === 0 ? (
-              <p className="empty-feed">No revealed events yet at this song timestamp.</p>
+              <p className="empty-feed">No events yet.</p>
             ) : (
               <ul className="feed">
                 {stageFeed.map((item) => (
@@ -419,10 +416,9 @@ export default function HomeClient(props: HomeClientProps) {
                     <span className="type">{item.type}</span>
                     <span className="line">
                       {item.patch
-                        ? "Agent patched /work/live.tidal"
+                        ? "Updated /work/live.tidal"
                         : item.text ?? item.cmd ?? item.stdout ?? item.stderr ?? "Event"}
                     </span>
-                    {item.patch ? <pre>{item.patch}</pre> : null}
                   </li>
                 ))}
               </ul>
@@ -430,7 +426,7 @@ export default function HomeClient(props: HomeClientProps) {
           </aside>
         </div>
         <div className="code-wrap">
-          <h3>Live Buffer (/work/live.tidal)</h3>
+          <h3>BUFFER /work/live.tidal</h3>
           {replay.warnings.length > 0 ? (
             <ul className="warnings">
               {replay.warnings.map((warning) => (
@@ -444,8 +440,7 @@ export default function HomeClient(props: HomeClientProps) {
 
       <section className="card audio-dock">
         <div>
-          <h2>Today Audio</h2>
-          <p className="meta">Track source for the live stage timeline.</p>
+          <h2>🎵 TRACK</h2>
         </div>
         <audio
           className="audio-mini"
@@ -463,8 +458,7 @@ export default function HomeClient(props: HomeClientProps) {
       </section>
 
       <section className="card join-card">
-        <h2>Join As Agent</h2>
-        <p className="meta">Generate a private SKILL.md URL for your coding agent.</p>
+        <h2>🤖 AGENT LINK</h2>
         <form className="join-form" onSubmit={handleCreateJoinUrl}>
           <div className="join-row">
             <input
@@ -482,7 +476,7 @@ export default function HomeClient(props: HomeClientProps) {
         </form>
         {joinUrl ? (
           <div className="join-result">
-            <p className="prompt">Copy URL below and send it to your agent.</p>
+            <p className="prompt">Send this URL to your agent.</p>
             <div className="join-row">
               <input value={joinUrl} readOnly />
               <button type="button" onClick={handleCopyJoinUrl}>
@@ -490,23 +484,23 @@ export default function HomeClient(props: HomeClientProps) {
               </button>
             </div>
             <a href={joinUrl} target="_blank" rel="noreferrer">
-              Open SKILL.md
+              open skill.md
             </a>
           </div>
         ) : null}
       </section>
 
       <section className="card stream-card">
-        <h2>Agents</h2>
+        <h2>🤖 AGENTS</h2>
         {agentRoster.length === 0 ? (
-          <p className="meta">No agent history yet.</p>
+          <p className="meta">No agents yet.</p>
         ) : (
           <ul className="agent-rail">
             {agentRoster.map((agent) => (
               <li key={agent.name} className={`agent-chip ${agent.isLive ? "is-live" : ""}`}>
                 <p className="agent-name">{agent.name}</p>
                 <p className="agent-meta">
-                  {agent.isLive ? "LIVE NOW" : agent.lastStatus ?? "UNKNOWN"} · {agent.runs} run
+                  {agent.isLive ? "LIVE" : agent.lastStatus ?? "UNKNOWN"} - {agent.runs} run
                   {agent.runs === 1 ? "" : "s"}
                 </p>
               </li>
@@ -517,7 +511,7 @@ export default function HomeClient(props: HomeClientProps) {
 
       {commentRunId ? (
         <section className="card stream-card">
-          <h2>Comments</h2>
+          <h2>💬 CHAT</h2>
           <ul className="comments comment-stream">
             {comments.map((comment) => (
               <li key={comment.id}>
@@ -530,25 +524,25 @@ export default function HomeClient(props: HomeClientProps) {
             <input
               value={nameInput}
               onChange={(next) => setNameInput(next.target.value)}
-              placeholder="Your name"
+              placeholder="name"
               maxLength={40}
               required
             />
             <textarea
               value={textInput}
               onChange={(next) => setTextInput(next.target.value)}
-              placeholder="Drop a comment"
+              placeholder="comment"
               maxLength={500}
               required
             />
             {commentError ? <p className="error">{commentError}</p> : null}
-            <button type="submit">Post comment</button>
+            <button type="submit">send</button>
           </form>
         </section>
       ) : null}
 
       <section className="card stream-card">
-        <h2>Archive</h2>
+        <h2>📼 ARCHIVE</h2>
         <ul className="archive tiktok-list">
           {archive.map((run) => (
             <li key={run.id} className="archive-item">
@@ -563,7 +557,7 @@ export default function HomeClient(props: HomeClientProps) {
         </ul>
         {archiveCursor ? (
           <button type="button" onClick={loadMoreArchive}>
-            Load more
+            more
           </button>
         ) : null}
       </section>
