@@ -33,6 +33,11 @@ export default function HomeClient(props: HomeClientProps) {
   const [nameInput, setNameInput] = useState("");
   const [textInput, setTextInput] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [joinAgentName, setJoinAgentName] = useState("JamAgent");
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinUrl, setJoinUrl] = useState("");
+  const [joinCopied, setJoinCopied] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const liveRunIdRef = useRef<number | null>(props.initialLiveRun?.id ?? null);
 
@@ -267,6 +272,64 @@ export default function HomeClient(props: HomeClientProps) {
     await loadComments(commentRunId);
   }
 
+  async function handleCreateJoinUrl(event: FormEvent) {
+    event.preventDefault();
+    setJoinError(null);
+    setJoinCopied(false);
+
+    const cleanedName = joinAgentName.trim();
+    if (!cleanedName) {
+      setJoinError("Agent name is required");
+      return;
+    }
+
+    setJoinBusy(true);
+    try {
+      const response = await fetch("/api/agent/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          agentName: cleanedName
+        })
+      });
+
+      const payload = safeJson(await response.text());
+      const maybeToken = payload?.agentToken;
+      if (!response.ok || typeof maybeToken !== "string" || !maybeToken) {
+        const message =
+          payload && typeof payload.error === "string"
+            ? payload.error
+            : "Failed to generate join URL";
+        setJoinError(message);
+        return;
+      }
+
+      const origin = window.location.origin.replace(/\/$/, "");
+      const skillUrl = `${origin}/SKILL.md?apiBase=${encodeURIComponent(origin)}&agentName=${encodeURIComponent(cleanedName)}&agentToken=${encodeURIComponent(maybeToken)}`;
+      setJoinUrl(skillUrl);
+      setJoinAgentName(cleanedName);
+    } finally {
+      setJoinBusy(false);
+    }
+  }
+
+  async function handleCopyJoinUrl() {
+    if (!joinUrl) return;
+    setJoinError(null);
+
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+      setJoinCopied(true);
+      setTimeout(() => {
+        setJoinCopied(false);
+      }, 1800);
+    } catch {
+      setJoinError("Clipboard copy failed. Copy URL manually.");
+    }
+  }
+
   function onAudioTimeUpdate() {
     const audio = audioRef.current;
     if (!audio) return;
@@ -300,6 +363,40 @@ export default function HomeClient(props: HomeClientProps) {
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
         />
+      </section>
+
+      <section className="card">
+        <h2>Join</h2>
+        <p className="meta">Generate a private SKILL.md URL for your coding agent.</p>
+        <form className="join-form" onSubmit={handleCreateJoinUrl}>
+          <div className="join-row">
+            <input
+              value={joinAgentName}
+              onChange={(next) => setJoinAgentName(next.target.value)}
+              placeholder="Agent name"
+              maxLength={60}
+              required
+            />
+            <button type="submit" disabled={joinBusy}>
+              {joinBusy ? "Generating..." : "Join"}
+            </button>
+          </div>
+          {joinError ? <p className="error">{joinError}</p> : null}
+        </form>
+        {joinUrl ? (
+          <div className="join-result">
+            <p className="prompt">Copy URL below and send it to your agent.</p>
+            <div className="join-row">
+              <input value={joinUrl} readOnly />
+              <button type="button" onClick={handleCopyJoinUrl}>
+                {joinCopied ? "Copied" : "Copy URL"}
+              </button>
+            </div>
+            <a href={joinUrl} target="_blank" rel="noreferrer">
+              Open SKILL.md
+            </a>
+          </div>
+        ) : null}
       </section>
 
       <section className="card">
