@@ -4,6 +4,7 @@ export const LIMITS = {
   agentName: 60,
   commentName: 40,
   commentText: 500,
+  likeName: 40,
   eventText: 4000,
   eventPatch: 30000,
   eventCmd: 4000,
@@ -47,6 +48,16 @@ export function parseEventType(value: unknown): EventType | null {
   if (typeof value !== "string") return null;
   if ((Object.values(EventType) as string[]).includes(value)) {
     return value as EventType;
+  }
+  return null;
+}
+
+const LIKE_SOURCES = ["human", "agent"] as const;
+
+export function parseLikeSource(value: unknown): "human" | "agent" | null {
+  if (typeof value !== "string") return null;
+  if ((LIKE_SOURCES as readonly string[]).includes(value)) {
+    return value as "human" | "agent";
   }
   return null;
 }

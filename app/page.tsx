@@ -2,6 +2,7 @@ import { RunStatus } from "@prisma/client";
 
 import HomeClient from "@/components/HomeClient";
 import { prisma } from "@/lib/db";
+import { getLikeCountsForRunIds } from "@/lib/likes";
 import { serializeDailyChallenge, serializeEvent, serializeRun } from "@/lib/serializers";
 import { ensureTodayChallenge } from "@/lib/server-data";
 import type { CommentDto, EventDto, RunWithChallengeDto } from "@/lib/types";
@@ -25,7 +26,15 @@ export default async function HomePage() {
         }
       },
       orderBy: { id: "desc" },
-      include: { dailyChallenge: true },
+      include: {
+        dailyChallenge: true,
+        _count: {
+          select: {
+            events: true,
+            comments: true
+          }
+        }
+      },
       take: ARCHIVE_PAGE_SIZE + 1
     })
   ]);
@@ -33,10 +42,15 @@ export default async function HomePage() {
   const hasMoreArchive = archiveRows.length > ARCHIVE_PAGE_SIZE;
   const archiveSlice = hasMoreArchive ? archiveRows.slice(0, ARCHIVE_PAGE_SIZE) : archiveRows;
   const nextArchiveCursor = hasMoreArchive ? archiveSlice[archiveSlice.length - 1]?.id ?? null : null;
+  const likeCounts = await getLikeCountsForRunIds(prisma, archiveSlice.map((row) => row.id));
 
   const archive: RunWithChallengeDto[] = archiveSlice.map((row) => ({
     ...serializeRun(row),
-    dailyChallenge: serializeDailyChallenge(row.dailyChallenge)
+    dailyChallenge: serializeDailyChallenge(row.dailyChallenge),
+    counts: {
+      ...row._count,
+      likes: likeCounts.get(row.id) ?? 0
+    }
   }));
 
   const commentRunId = liveRun

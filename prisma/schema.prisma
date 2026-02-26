@@ -23,6 +23,11 @@ enum EventType {
   marker
 }
 
+enum LikeSource {
+  human
+  agent
+}
+
 model DailyChallenge {
   id             Int      @id @default(autoincrement())
   date           DateTime @unique @db.Date
@@ -51,6 +56,7 @@ model Run {
   liveSlot         String?        @unique
   events           Event[]
   comments         Comment[]
+  likes            RunLike[]
 
   @@index([status, startedAt])
   @@index([dailyChallengeId, startedAt])
@@ -81,6 +87,18 @@ model Comment {
   name  String
   text  String
 
+  @@index([runId, id])
+}
+
+model RunLike {
+  id     Int        @id @default(autoincrement())
+  runId  Int
+  run    Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  ts     DateTime   @default(now())
+  name   String
+  source LikeSource @default(human)
+
+  @@unique([runId, source, name])
   @@index([runId, id])
 }
 

@@ -1,6 +1,7 @@
 import { RunStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { getLikeCountsForRunIds } from "@/lib/likes";
 import { serializeRun } from "@/lib/serializers";
 import { parseCursorInt, parsePositiveInt } from "@/lib/validation";
 
@@ -23,13 +24,20 @@ export async function GET(request: Request) {
     },
     take: limit + 1,
     include: {
-      dailyChallenge: true
+      dailyChallenge: true,
+      _count: {
+        select: {
+          events: true,
+          comments: true
+        }
+      }
     }
   });
 
   const hasMore = runs.length > limit;
   const sliced = hasMore ? runs.slice(0, limit) : runs;
   const nextCursor = hasMore ? sliced[sliced.length - 1]?.id ?? null : null;
+  const likeCounts = await getLikeCountsForRunIds(prisma, sliced.map((run) => run.id));
 
   return Response.json({
     runs: sliced.map((run) => ({
@@ -38,6 +46,10 @@ export async function GET(request: Request) {
         ...run.dailyChallenge,
         date: run.dailyChallenge.date.toISOString(),
         createdAt: run.dailyChallenge.createdAt.toISOString()
+      },
+      counts: {
+        ...run._count,
+        likes: likeCounts.get(run.id) ?? 0
       }
     })),
     nextCursor

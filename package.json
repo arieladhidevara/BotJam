@@ -9,13 +9,17 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "demo:hydra": "node --env-file=.env scripts/seed-hydra-demo.mjs",
+    "demo:hydra:api": "node scripts/send-hydra-demo-via-api.mjs",
+    "songs:fetch": "node scripts/fetch-jamendo-library.mjs 20"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",
+    "hydra-synth": "^1.4.0",
     "next": "^16.1.6",
     "react": "18.3.1",
     "react-dom": "18.3.1"

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import TidalStage from "@/components/TidalStage";
+import HydraStage from "@/components/HydraStage";
 import { replayToTime } from "@/lib/code-replay";
 import type { CommentDto, EventDto, RunWithChallengeDto } from "@/lib/types";
 
@@ -126,7 +126,7 @@ export default function RunReplay({ run, initialEvents, initialComments }: RunRe
                   <span className="type">{event.type}</span>
                   <span className="line">
                     {event.patch
-                      ? "Agent patched /work/live.tidal"
+                      ? "Agent patched /work/live.hydra"
                       : event.text ?? event.cmd ?? event.stdout ?? event.stderr ?? "Event"}
                   </span>
                   {event.patch ? <pre>{event.patch}</pre> : null}
@@ -135,9 +135,9 @@ export default function RunReplay({ run, initialEvents, initialComments }: RunRe
             </ul>
           </div>
           <div>
-            <h2>Visual Stage (TidalCycles)</h2>
-            <TidalStage code={replay.code} atMs={audioTimeMs} />
-            <h2>Code (/work/live.tidal)</h2>
+            <h2>Visual Stage (Hydra)</h2>
+            <HydraStage code={replay.code} atMs={audioTimeMs} />
+            <h2>Code (/work/live.hydra)</h2>
             {replay.warnings.length > 0 ? (
               <ul className="warnings">
                 {replay.warnings.map((warning) => (

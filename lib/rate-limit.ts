@@ -46,5 +46,6 @@ if (!globalThis.botjamRateLimiter) {
 
 export const RATE_LIMITS = {
   commentsPerMinute: 8,
+  likesPerMinute: 24,
   eventsPerMinutePerToken: 240
 } as const;

@@ -22,6 +22,16 @@ type SongCacheFile = {
   provider?: string;
 };
 
+type DynamicLibraryTrack = {
+  id: string;
+  title: string;
+  artist: string;
+  fileName: string;
+  durationMs: number;
+  sourceUrl: string;
+  license: string;
+};
+
 type JamendoTrack = {
   title: string;
   artist: string;
@@ -38,6 +48,7 @@ const DEFAULT_MIN_DURATION_SEC = 150;
 const DEFAULT_MAX_DURATION_SEC = 480;
 const DISALLOWED_LOCAL_ARTISTS = ["kevin macleod"];
 const DISALLOWED_LOCAL_TITLES = ["long trail"];
+const DYNAMIC_LIBRARY_CATALOG_FILE = "catalog.json";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -85,7 +96,6 @@ export function resolvePromptForDate(date: Date): string {
 export async function resolveSongForDate(date: Date): Promise<SongSelection> {
   const stamp = toDateStamp(date);
   const songsDir = path.join(process.cwd(), "public", "songs");
-  const jamendoEnabled = Boolean(process.env.JAMENDO_CLIENT_ID?.trim());
   const datedMp3Path = path.join(songsDir, `${stamp}.mp3`);
   const datedWavPath = path.join(songsDir, `${stamp}.wav`);
 
@@ -110,13 +120,9 @@ export async function resolveSongForDate(date: Date): Promise<SongSelection> {
     return apiSong;
   }
 
-  // When Jamendo is configured, avoid falling back to bundled library tracks.
-  // This keeps daily selection aligned with requested DJ/techno style from API tags.
-  if (!jamendoEnabled) {
-    const localSong = await resolveLocalLibrarySong(stamp, songsDir);
-    if (localSong) {
-      return localSong;
-    }
+  const localSong = await resolveLocalLibrarySong(stamp, songsDir);
+  if (localSong) {
+    return localSong;
   }
 
   return {
@@ -236,9 +242,18 @@ async function readCachedSong(songPath: string, songUrl: string, cachePath: stri
 }
 
 async function resolveLocalLibrarySong(stamp: string, songsDir: string): Promise<SongSelection | null> {
+  const dynamicTracks = await readDynamicLibraryCatalog(songsDir);
+  const mergedTracks = [...dynamicTracks, ...ROYALTY_FREE_LIBRARY];
+  const uniqueTracks = new Map<string, RoyaltyFreeTrack>();
+  for (const track of mergedTracks) {
+    if (!uniqueTracks.has(track.fileName)) {
+      uniqueTracks.set(track.fileName, track);
+    }
+  }
+
   const available: RoyaltyFreeTrack[] = [];
 
-  for (const track of ROYALTY_FREE_LIBRARY) {
+  for (const track of uniqueTracks.values()) {
     if (isDisallowedLocalTrack(track)) {
       continue;
     }
@@ -319,12 +334,9 @@ async function fetchJamendoTracks(clientId: string): Promise<JamendoTrack[]> {
     }
 
     const styledTracks = tracks.filter((track) => track.genreScore > 0);
-    if (styledTracks.length === 0) {
-      continue;
-    }
-
-    styledTracks.sort((a, b) => b.genreScore - a.genreScore);
-    return styledTracks;
+    const pool = styledTracks.length > 0 ? styledTracks : tracks;
+    pool.sort((a, b) => b.genreScore - a.genreScore);
+    return pool;
   }
 
   return [];
@@ -352,6 +364,50 @@ function extractStringArray(value: unknown): string[] {
 
 function normalizeTag(value: string): string {
   return value.trim().toLowerCase();
+}
+
+async function readDynamicLibraryCatalog(songsDir: string): Promise<RoyaltyFreeTrack[]> {
+  const catalogPath = path.join(songsDir, "library", DYNAMIC_LIBRARY_CATALOG_FILE);
+
+  try {
+    const raw = await readFile(catalogPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    const tracks: RoyaltyFreeTrack[] = [];
+    for (const row of parsed) {
+      if (!row || typeof row !== "object") continue;
+      const item = row as Partial<DynamicLibraryTrack>;
+
+      if (
+        typeof item.id !== "string" ||
+        typeof item.title !== "string" ||
+        typeof item.artist !== "string" ||
+        typeof item.fileName !== "string" ||
+        typeof item.sourceUrl !== "string" ||
+        typeof item.license !== "string"
+      ) {
+        continue;
+      }
+
+      tracks.push({
+        id: item.id,
+        title: item.title,
+        artist: item.artist,
+        fileName: item.fileName,
+        durationMs:
+          typeof item.durationMs === "number" && Number.isFinite(item.durationMs) && item.durationMs > 0
+            ? Math.floor(item.durationMs)
+            : 180_000,
+        sourceUrl: item.sourceUrl,
+        license: item.license
+      });
+    }
+
+    return tracks;
+  } catch {
+    return [];
+  }
 }
 
 function isDisallowedLocalTrack(track: RoyaltyFreeTrack): boolean {

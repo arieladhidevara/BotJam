@@ -2,12 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import TidalStage from "@/components/TidalStage";
+import FeedRunCard from "@/components/FeedRunCard";
+import HydraStage from "@/components/HydraStage";
 import { replayToTime } from "@/lib/code-replay";
 import type {
   CommentDto,
   DailyChallengeDto,
   EventDto,
+  LikeDto,
   RunDto,
   RunWithChallengeDto
 } from "@/lib/types";
@@ -28,6 +30,51 @@ type AgentSummary = {
   lastStatus: "LIVE" | "FINISHED" | "FAILED" | null;
 };
 
+const AGENT_PREFIX = ["Neon", "Pixel", "Turbo", "Echo", "Circuit", "Nova", "Drift", "Pulse"];
+const AGENT_SUFFIX = ["Bot", "Runner", "Synth", "Signal", "Node", "Wave", "Glitch", "Machine"];
+const ICON = {
+  red: "\u{1F534}",
+  yellow: "\u{1F7E1}",
+  green: "\u{1F7E2}",
+  white: "\u26AA",
+  date: "\u{1F5D3}",
+  timer: "\u23F1",
+  headphones: "\u{1F3A7}",
+  monitor: "\u{1F5A5}",
+  robot: "\u{1F916}",
+  updates: "\u{1F4E1}",
+  brain: "\u{1F9E0}",
+  note: "\u{1F3B5}",
+  lowVolume: "\u{1F508}",
+  link: "\u{1F517}",
+  dice: "\u{1F3B2}",
+  plus: "\u2795",
+  check: "\u2705",
+  clipboard: "\u{1F4CB}",
+  doc: "\u{1F4C4}",
+  chat: "\u{1F4AC}",
+  person: "\u{1F464}",
+  write: "\u270D\uFE0F",
+  send: "\u{1F4E8}",
+  archive: "\u{1F39E}",
+  feed: "\u{1F4F0}",
+  heart: "\u2764\uFE0F",
+  unmute: "\u{1F50A}",
+  mute: "\u{1F507}",
+  close: "\u274C",
+  play: "\u25B6\uFE0F",
+  down: "\u2B07\uFE0F",
+  speaker: "\u{1F50A}",
+  pause: "\u23F8",
+  patch: "\u{1F9E9}",
+  status: "\u{1F4A1}",
+  cmd: "\u2328\uFE0F",
+  output: "\u{1F4E4}",
+  error: "\u26A0\uFE0F",
+  marker: "\u{1F4CD}",
+  sparkle: "\u2728"
+} as const;
+
 export default function HomeClient(props: HomeClientProps) {
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeDto>(props.initialDailyChallenge);
   const [liveRun, setLiveRun] = useState<RunDto | null>(props.initialLiveRun);
@@ -35,32 +82,69 @@ export default function HomeClient(props: HomeClientProps) {
   const [archive, setArchive] = useState<RunWithChallengeDto[]>(props.initialArchive);
   const [archiveCursor, setArchiveCursor] = useState<number | null>(props.initialArchiveNextCursor);
   const [comments, setComments] = useState<CommentDto[]>(props.initialComments);
+  const [stageLikes, setStageLikes] = useState<LikeDto[]>([]);
   const [audioTimeMs, setAudioTimeMs] = useState(0);
   const [audioDurationMs, setAudioDurationMs] = useState<number | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [nameInput, setNameInput] = useState("");
+  const [stageStartMs, setStageStartMs] = useState<number | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [nameInput, setNameInput] = useState<string>(() => createViewerName());
   const [textInput, setTextInput] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
-  const [joinAgentName, setJoinAgentName] = useState("JamAgent");
+  const [stageLikeError, setStageLikeError] = useState<string | null>(null);
+  const [joinAgentName, setJoinAgentName] = useState<string>(() => createAgentName());
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState("");
   const [joinCopied, setJoinCopied] = useState(false);
+  const [stageSideHeightPx, setStageSideHeightPx] = useState<number | null>(null);
+  const [viewerName, setViewerName] = useState<string>(() => createViewerName());
+  const [likeError, setLikeError] = useState<string | null>(null);
+  const [modalRun, setModalRun] = useState<RunWithChallengeDto | null>(null);
+  const [modalEvents, setModalEvents] = useState<EventDto[]>([]);
+  const [modalComments, setModalComments] = useState<CommentDto[]>([]);
+  const [modalLikes, setModalLikes] = useState<LikeDto[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalAudioTimeMs, setModalAudioTimeMs] = useState(0);
+  const [modalAudioDurationMs, setModalAudioDurationMs] = useState<number | null>(null);
+  const [modalNameInput, setModalNameInput] = useState("");
+  const [modalTextInput, setModalTextInput] = useState("");
+  const [modalCommentError, setModalCommentError] = useState<string | null>(null);
+  const [modalLikeError, setModalLikeError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const modalAudioRef = useRef<HTMLAudioElement | null>(null);
+  const stageFrameRef = useRef<HTMLDivElement | null>(null);
   const liveRunIdRef = useRef<number | null>(props.initialLiveRun?.id ?? null);
+  const stageMutedForFeedModalRef = useRef(false);
+
+  const stageDate = dailyChallenge.date.slice(0, 10);
+  const stagedRun = useMemo(() => {
+    if (liveRun) return null;
+    return archive.find(
+      (run) => run.dailyChallenge.date.slice(0, 10) === stageDate && run.status === "FINISHED"
+    ) ?? null;
+  }, [archive, liveRun, stageDate]);
 
   const commentRunId = useMemo(() => {
     if (liveRun) return liveRun.id;
-    const dateStamp = dailyChallenge.date.slice(0, 10);
-    const todayRun = archive.find((run) => run.dailyChallenge.date.slice(0, 10) === dateStamp);
+    if (stagedRun) return stagedRun.id;
+    const todayRun = archive.find((run) => run.dailyChallenge.date.slice(0, 10) === stageDate);
     return todayRun?.id ?? null;
-  }, [archive, dailyChallenge.date, liveRun]);
+  }, [archive, liveRun, stagedRun, stageDate]);
 
+  const activeRun = liveRun ?? stagedRun;
   const replay = useMemo(() => replayToTime(events, audioTimeMs), [audioTimeMs, events]);
-
   const visibleEvents = replay.visibleEvents as EventDto[];
-  const timelineDurationMs = audioDurationMs ?? dailyChallenge.songDurationMs ?? 0;
+  const timelineDurationMs = dailyChallenge.songDurationMs ?? audioDurationMs ?? 0;
   const stageFeed = useMemo(() => visibleEvents.slice(-18), [visibleEvents]);
+  const modalReplay = useMemo(() => replayToTime(modalEvents, modalAudioTimeMs), [modalAudioTimeMs, modalEvents]);
+  const modalTimelineMs = modalAudioDurationMs ?? modalRun?.dailyChallenge.songDurationMs ?? 0;
+
+  const audioNote = liveRun
+    ? `${ICON.speaker} LIVE playback`
+    : stagedRun
+      ? `${ICON.speaker} one-shot replay`
+      : `${ICON.pause} no live playback yet`;
+
   const agentRoster = useMemo(() => {
     const map = new Map<string, AgentSummary>();
 
@@ -96,10 +180,80 @@ export default function HomeClient(props: HomeClientProps) {
       (a, b) => Number(b.isLive) - Number(a.isLive) || b.runs - a.runs || a.name.localeCompare(b.name)
     );
   }, [archive, liveRun]);
+  const onlineAgentCount = useMemo(
+    () => agentRoster.reduce((count, agent) => count + (agent.isLive ? 1 : 0), 0),
+    [agentRoster]
+  );
 
   useEffect(() => {
     liveRunIdRef.current = liveRun?.id ?? null;
   }, [liveRun?.id]);
+
+  useEffect(() => {
+    const element = stageFrameRef.current;
+    if (!element) {
+      setStageSideHeightPx(null);
+      return;
+    }
+
+    const updateHeight = () => {
+      if (window.innerWidth <= 980) {
+        setStageSideHeightPx(null);
+        return;
+      }
+      const next = Math.max(0, Math.floor(element.getBoundingClientRect().height));
+      setStageSideHeightPx((current) => (current === next ? current : next));
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => window.removeEventListener("resize", updateHeight);
+    }
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    window.addEventListener("resize", updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("botjam_viewer_name");
+    if (saved && saved.trim()) {
+      setViewerName(saved.trim().slice(0, 40));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("botjam_viewer_name", viewerName);
+  }, [viewerName]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (!modalRun) {
+      document.body.classList.remove("modal-open");
+      return;
+    }
+
+    document.body.classList.add("modal-open");
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeModal();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.classList.remove("modal-open");
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [modalRun]);
 
   useEffect(() => {
     const source = new EventSource("/api/live/stream");
@@ -130,7 +284,7 @@ export default function HomeClient(props: HomeClientProps) {
 
       setEvents((previous) => {
         const currentLive = liveRunIdRef.current;
-        if (currentLive && runId !== currentLive) return previous;
+        if (!currentLive || runId !== currentLive) return previous;
         if (previous.some((item) => item.id === incomingEvent.id)) return previous;
         return [...previous, incomingEvent];
       });
@@ -153,8 +307,10 @@ export default function HomeClient(props: HomeClientProps) {
           setDailyChallenge(maybeChallenge);
         }
 
+        setStageStartMs(null);
+        setAudioTimeMs(0);
         setEvents([]);
-        void loadLiveEvents(nextRun.id);
+        void loadRunEvents(nextRun.id);
         return;
       }
 
@@ -162,7 +318,6 @@ export default function HomeClient(props: HomeClientProps) {
         setLiveRun((current) => {
           if (current?.id === nextRun.id) {
             liveRunIdRef.current = null;
-            setEvents([]);
             return null;
           }
           return current;
@@ -186,35 +341,110 @@ export default function HomeClient(props: HomeClientProps) {
   }, []);
 
   useEffect(() => {
-    if (!liveRun) {
+    if (!activeRun) {
       setEvents([]);
       return;
     }
-    void loadLiveEvents(liveRun.id);
-  }, [liveRun?.id]);
+    void loadRunEvents(activeRun.id);
+  }, [activeRun?.id]);
+
+  useEffect(() => {
+    if (liveRun) {
+      setStageStartMs(liveRun.runStartAtMs);
+      return;
+    }
+
+    if (!stagedRun) {
+      setStageStartMs(null);
+      setAudioTimeMs(0);
+      return;
+    }
+
+    setStageStartMs(Date.now());
+    setAudioTimeMs(0);
+  }, [liveRun?.id, liveRun?.runStartAtMs, stagedRun?.id]);
+
+  useEffect(() => {
+    if (!activeRun || stageStartMs == null) return;
+
+    const updateClock = () => {
+      const elapsed = Math.max(0, Date.now() - stageStartMs);
+      const bounded = timelineDurationMs > 0 ? Math.min(elapsed, timelineDurationMs) : elapsed;
+      setAudioTimeMs(bounded);
+    };
+
+    updateClock();
+    const timer = window.setInterval(updateClock, 120);
+    return () => window.clearInterval(timer);
+  }, [activeRun?.id, stageStartMs, timelineDurationMs]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!activeRun || stageStartMs == null) {
+      audio.pause();
+      seekAudio(audio, 0);
+      setAudioBlocked(false);
+      return;
+    }
+
+    const initialElapsed = Math.max(0, Date.now() - stageStartMs);
+    const initialBounded = timelineDurationMs > 0 ? Math.min(initialElapsed, timelineDurationMs) : initialElapsed;
+    seekAudio(audio, initialBounded / 1000);
+
+    const tryPlay = async () => {
+      try {
+        await audio.play();
+        setAudioBlocked(false);
+      } catch {
+        setAudioBlocked(true);
+      }
+    };
+
+    void tryPlay();
+
+    const syncTimer = window.setInterval(() => {
+      const elapsed = Math.max(0, Date.now() - stageStartMs);
+      const bounded = timelineDurationMs > 0 ? Math.min(elapsed, timelineDurationMs) : elapsed;
+      const expectedSeconds = bounded / 1000;
+      const drift = Math.abs(audio.currentTime - expectedSeconds);
+
+      if (drift > 0.8) {
+        seekAudio(audio, expectedSeconds);
+      }
+
+      const nearEnd = timelineDurationMs > 0 && bounded >= timelineDurationMs - 120;
+      if (audio.paused && !nearEnd) {
+        void tryPlay();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(syncTimer);
+  }, [activeRun?.id, stageStartMs, dailyChallenge.songUrl, timelineDurationMs]);
 
   useEffect(() => {
     if (!commentRunId) {
       setComments([]);
+      setStageLikes([]);
       return;
     }
 
-    void loadComments(commentRunId);
+    void loadStageSocial(commentRunId);
     const timer = setInterval(() => {
-      void loadComments(commentRunId);
+      void loadStageSocial(commentRunId);
     }, 5000);
     return () => clearInterval(timer);
   }, [commentRunId]);
 
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!modalRun) return;
+    void loadModalData(modalRun.id);
     const timer = setInterval(() => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      setAudioTimeMs(Math.floor(audio.currentTime * 1000));
-    }, 100);
+      void loadModalSocial(modalRun.id);
+    }, 6000);
     return () => clearInterval(timer);
-  }, [isPlaying]);
+  }, [modalRun?.id]);
 
   async function refreshToday() {
     const response = await fetch("/api/today", { cache: "no-store" });
@@ -249,7 +479,7 @@ export default function HomeClient(props: HomeClientProps) {
     setArchiveCursor(typeof nextCursor === "number" ? nextCursor : null);
   }
 
-  async function loadLiveEvents(runId: number) {
+  async function loadRunEvents(runId: number) {
     const response = await fetch(`/api/runs/${runId}/events?limit=1000`, { cache: "no-store" });
     if (!response.ok) return;
     const payload = safeJson(await response.text());
@@ -277,15 +507,170 @@ export default function HomeClient(props: HomeClientProps) {
     setArchiveCursor(typeof nextCursor === "number" ? nextCursor : null);
   }
 
-  async function loadComments(runId: number) {
-    const response = await fetch(`/api/runs/${runId}/comments`, { cache: "no-store" });
-    if (!response.ok) return;
-    const payload = safeJson(await response.text());
-    if (!payload) return;
+  async function loadStageSocial(runId: number) {
+    const [commentsResponse, likesResponse] = await Promise.all([
+      fetch(`/api/runs/${runId}/comments`, { cache: "no-store" }),
+      fetch(`/api/runs/${runId}/likes`, { cache: "no-store" })
+    ]);
+    if (!commentsResponse.ok || !likesResponse.ok) return;
 
-    const nextComments = payload.comments;
-    if (Array.isArray(nextComments)) {
-      setComments(nextComments.filter(isComment));
+    const commentsPayload = safeJson(await commentsResponse.text());
+    const likesPayload = safeJson(await likesResponse.text());
+    if (!commentsPayload || !likesPayload) return;
+
+    const nextComments = Array.isArray(commentsPayload.comments)
+      ? commentsPayload.comments.filter(isComment)
+      : [];
+    const nextLikes = Array.isArray(likesPayload.likes) ? likesPayload.likes.filter(isLike) : [];
+    setComments(nextComments);
+    setStageLikes(nextLikes);
+  }
+
+  async function loadModalData(runId: number) {
+    setModalLoading(true);
+    try {
+      const [eventsResponse, commentsResponse, likesResponse] = await Promise.all([
+        fetch(`/api/runs/${runId}/events?limit=1000`, { cache: "no-store" }),
+        fetch(`/api/runs/${runId}/comments`, { cache: "no-store" }),
+        fetch(`/api/runs/${runId}/likes`, { cache: "no-store" })
+      ]);
+
+      const eventsPayload = eventsResponse.ok ? safeJson(await eventsResponse.text()) : null;
+      const commentsPayload = commentsResponse.ok ? safeJson(await commentsResponse.text()) : null;
+      const likesPayload = likesResponse.ok ? safeJson(await likesResponse.text()) : null;
+
+      const nextEvents = Array.isArray(eventsPayload?.events) ? eventsPayload.events.filter(isEvent) : [];
+      const nextComments = Array.isArray(commentsPayload?.comments)
+        ? commentsPayload.comments.filter(isComment)
+        : [];
+      const nextLikes = Array.isArray(likesPayload?.likes) ? likesPayload.likes.filter(isLike) : [];
+
+      setModalEvents(nextEvents);
+      setModalComments(nextComments);
+      setModalLikes(nextLikes);
+      setArchive((previous) =>
+        previous.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                counts: {
+                  events: nextEvents.length,
+                  comments: nextComments.length,
+                  likes: nextLikes.length
+                }
+              }
+            : run
+        )
+      );
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
+  async function loadModalSocial(runId: number) {
+    const [commentsResponse, likesResponse] = await Promise.all([
+      fetch(`/api/runs/${runId}/comments`, { cache: "no-store" }),
+      fetch(`/api/runs/${runId}/likes`, { cache: "no-store" })
+    ]);
+    if (!commentsResponse.ok || !likesResponse.ok) return;
+
+    const commentsPayload = safeJson(await commentsResponse.text());
+    const likesPayload = safeJson(await likesResponse.text());
+    if (!commentsPayload || !likesPayload) return;
+
+    const nextComments = Array.isArray(commentsPayload.comments)
+      ? commentsPayload.comments.filter(isComment)
+      : [];
+    const nextLikes = Array.isArray(likesPayload.likes) ? likesPayload.likes.filter(isLike) : [];
+    setModalComments(nextComments);
+    setModalLikes(nextLikes);
+    syncRunCounts(runId, nextComments.length, nextLikes.length);
+  }
+
+  async function submitLike(run: RunWithChallengeDto, source: "human" | "agent" = "human") {
+    setLikeError(null);
+    setModalLikeError(null);
+    const name = source === "human" ? resolveViewerName(viewerName) : viewerName;
+    const response = await fetch(`/api/runs/${run.id}/likes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name,
+        source
+      })
+    });
+
+    const payload = safeJson(await response.text());
+    if (!response.ok) {
+      const message = payload && typeof payload.error === "string" ? payload.error : "Failed to like";
+      setLikeError(message);
+      if (modalRun?.id === run.id) {
+        setModalLikeError(message);
+      }
+      return;
+    }
+
+    const like = payload?.like;
+    const duplicate = Boolean(payload?.duplicate);
+    if (!duplicate && isLike(like)) {
+      setModalLikes((previous) => {
+        if (previous.some((item) => item.id === like.id)) return previous;
+        return [like, ...previous];
+      });
+      syncRunCounts(run.id, undefined, undefined, true);
+    }
+  }
+
+  function syncRunCounts(
+    runId: number,
+    commentsCount?: number,
+    likesCount?: number,
+    likeIncrement?: boolean
+  ) {
+    setArchive((previous) =>
+      previous.map((run) => {
+        if (run.id !== runId) return run;
+        const currentComments = run.counts?.comments ?? 0;
+        const currentLikes = run.counts?.likes ?? 0;
+        return {
+          ...run,
+          counts: {
+            events: run.counts?.events ?? 0,
+            comments: commentsCount ?? currentComments,
+            likes: likesCount ?? (likeIncrement ? currentLikes + 1 : currentLikes)
+          }
+        };
+      })
+    );
+  }
+
+  function openFeedModal(run: RunWithChallengeDto) {
+    setModalRun(run);
+    setModalEvents([]);
+    setModalComments([]);
+    setModalLikes([]);
+    setModalAudioTimeMs(0);
+    setModalAudioDurationMs(null);
+    setModalCommentError(null);
+    setModalLikeError(null);
+    setModalNameInput(viewerName);
+    setModalTextInput("");
+  }
+
+  function closeModal() {
+    restoreLiveStageAudioAfterFeedModal();
+    setModalRun(null);
+    setModalEvents([]);
+    setModalComments([]);
+    setModalLikes([]);
+    setModalAudioTimeMs(0);
+    setModalAudioDurationMs(null);
+    const audio = modalAudioRef.current;
+    if (audio) {
+      audio.pause();
+      seekAudio(audio, 0);
     }
   }
 
@@ -313,7 +698,126 @@ export default function HomeClient(props: HomeClientProps) {
     }
 
     setTextInput("");
-    await loadComments(commentRunId);
+    await loadStageSocial(commentRunId);
+  }
+
+  async function submitStageLike() {
+    setStageLikeError(null);
+    if (!commentRunId) return;
+
+    const response = await fetch(`/api/runs/${commentRunId}/likes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name: resolveViewerName(viewerName),
+        source: "human"
+      })
+    });
+
+    const payload = safeJson(await response.text());
+    if (!response.ok) {
+      const message = payload && typeof payload.error === "string" ? payload.error : "Failed to like";
+      setStageLikeError(message);
+      return;
+    }
+
+    if (payload?.duplicate) {
+      return;
+    }
+
+    const like = payload?.like;
+    if (isLike(like)) {
+      setStageLikes((previous) => {
+        if (previous.some((item) => item.id === like.id)) return previous;
+        return [like, ...previous];
+      });
+      return;
+    }
+
+    await loadStageSocial(commentRunId);
+  }
+
+  async function submitModalComment(event: FormEvent) {
+    event.preventDefault();
+    setModalCommentError(null);
+    if (!modalRun) return;
+
+    const response = await fetch(`/api/runs/${modalRun.id}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name: modalNameInput.trim() || resolveViewerName(viewerName),
+        text: modalTextInput
+      })
+    });
+
+    const payload = safeJson(await response.text());
+    if (!response.ok) {
+      const error = payload && typeof payload.error === "string" ? payload.error : "Failed to post comment";
+      setModalCommentError(error);
+      return;
+    }
+
+    const comment = payload?.comment;
+    if (isComment(comment)) {
+      setModalComments((previous) => {
+        const next = [...previous, comment];
+        syncRunCounts(modalRun.id, next.length);
+        return next;
+      });
+    } else {
+      await loadModalSocial(modalRun.id);
+    }
+    setModalTextInput("");
+  }
+
+  async function handleStageUnmute() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      await audio.play();
+      setAudioBlocked(false);
+    } catch {
+      setAudioBlocked(true);
+    }
+  }
+
+  function onModalAudioLoadedMetadata() {
+    const audio = modalAudioRef.current;
+    if (!audio || !Number.isFinite(audio.duration)) return;
+    setModalAudioDurationMs(Math.floor(audio.duration * 1000));
+  }
+
+  function onModalAudioPlay() {
+    muteLiveStageAudioForFeedModal();
+  }
+
+  function onModalAudioTimeUpdate() {
+    const audio = modalAudioRef.current;
+    if (!audio) return;
+    setModalAudioTimeMs(Math.floor(audio.currentTime * 1000));
+  }
+
+  function muteLiveStageAudioForFeedModal() {
+    if (!liveRun) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.muted) return;
+    audio.muted = true;
+    stageMutedForFeedModalRef.current = true;
+  }
+
+  function restoreLiveStageAudioAfterFeedModal() {
+    if (!stageMutedForFeedModalRef.current) return;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.muted = false;
+    }
+    stageMutedForFeedModalRef.current = false;
   }
 
   async function handleCreateJoinUrl(event: FormEvent) {
@@ -374,12 +878,6 @@ export default function HomeClient(props: HomeClientProps) {
     }
   }
 
-  function onAudioTimeUpdate() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setAudioTimeMs(Math.floor(audio.currentTime * 1000));
-  }
-
   function onAudioLoadedMetadata() {
     const audio = audioRef.current;
     if (!audio || !Number.isFinite(audio.duration)) return;
@@ -389,178 +887,371 @@ export default function HomeClient(props: HomeClientProps) {
   return (
     <main className="page jam-page">
       <section className="card stage-hero">
-        <p className="hero-kicker">🤖 STAGE</p>
-        <h1 className="hero-title">BOTJAM PIXEL JAM</h1>
-        <p className="meta">
-          🎧 {dailyChallenge.songTitle} - {dailyChallenge.songArtist}
-        </p>
-        <div className="hero-badges">
-          <span className={`badge ${liveRun ? "is-live" : "is-idle"}`}>
-            {liveRun ? `🤖 LIVE ${liveRun.agentName}` : "🛸 IDLE"}
-          </span>
-          <span className="badge">⏱ {formatMs(audioTimeMs)} / {formatMs(timelineDurationMs)}</span>
+        <div className="hero-top">
+          <h1 className="hero-title">BOTJAM</h1>
         </div>
-        <div className="stage-layout">
-          <div className="stage-main">
-            <TidalStage code={replay.code} atMs={audioTimeMs} />
+
+        {liveRun ? (
+          <div className="hero-badges">
+            <span className="badge is-live">{ICON.red} LIVE! {liveRun.agentName} is performing</span>
           </div>
-          <aside className="stage-side">
-            <h3>LOG</h3>
-            {stageFeed.length === 0 ? (
-              <p className="empty-feed">No events yet.</p>
-            ) : (
-              <ul className="feed">
-                {stageFeed.map((item) => (
-                  <li key={item.id} className={item.type === "patch" ? "feed-patch" : undefined}>
-                    <span className="time">{formatMs(item.atMs)}</span>
-                    <span className="type">{item.type}</span>
-                    <span className="line">
-                      {item.patch
-                        ? "Updated /work/live.tidal"
-                        : item.text ?? item.cmd ?? item.stdout ?? item.stderr ?? "Event"}
-                    </span>
+        ) : null}
+        <p className="track-meta">{dailyChallenge.songArtist}</p>
+
+        <div className="stage-layout">
+          <div className="stage-main-stack">
+            <div className="stage-main">
+              <div className="stage-frame" ref={stageFrameRef}>
+                {activeRun ? (
+                  <HydraStage code={replay.code} atMs={audioTimeMs} />
+                ) : (
+                  <div className="stage-placeholder">
+                    {!liveRun ? <p>{ICON.robot} Main Stage is available!</p> : null}
+                  </div>
+                )}
+                {audioBlocked && activeRun ? (
+                  <button type="button" className="unmute-cta" onClick={handleStageUnmute}>
+                    {ICON.unmute} UNMUTE STAGE AUDIO
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <aside className="stage-side" style={stageSideHeightPx ? { height: `${stageSideHeightPx}px` } : undefined}>
+            <section className="side-panel">
+              <p className="side-title">
+                {ICON.updates} Updates
+              </p>
+              {activeRun && stageFeed.length > 0 ? (
+                <ul className="feed side-scroll">
+                  {stageFeed.map((item) => (
+                    <li key={item.id} className={item.type === "patch" ? "feed-patch" : undefined}>
+                      <span className="time">{formatMs(item.atMs)}</span>
+                      <span className="type">{eventTypeIcon(item.type)}</span>
+                      <span className="line">{compactEventLine(item)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="empty-feed side-scroll">No updates yet.</p>
+              )}
+            </section>
+
+            <section className="side-panel">
+              <p className="side-title">
+                {ICON.brain} /work/live.hydra
+              </p>
+              {activeRun && replay.warnings.length > 0 ? (
+                <ul className="warnings">
+                  {replay.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <pre className="code side-code">
+                {activeRun ? replay.code || "-- waiting for first patch" : "-- no script published yet"}
+              </pre>
+            </section>
+          </aside>
+        </div>
+
+        <div className="stage-lower">
+          {commentRunId ? (
+            <section className="stage-social">
+              <div className="stage-social-actions">
+                <button
+                  type="button"
+                  className="like-button"
+                  onClick={() => {
+                    void submitStageLike();
+                  }}
+                >
+                  {ICON.heart} {stageLikes.length}
+                </button>
+                <span className="feed-card-stat">{ICON.chat} {comments.length}</span>
+              </div>
+
+              <ul className="comments comment-stream stage-comment-stream">
+                {comments.map((comment) => (
+                  <li key={comment.id}>
+                    <p className="comment-top">
+                      <strong>{comment.name}</strong>
+                      <span>{new Date(comment.ts).toLocaleTimeString()}</span>
+                    </p>
+                    <p className="comment-text">{comment.text}</p>
                   </li>
                 ))}
               </ul>
-            )}
-          </aside>
-        </div>
-        <div className="code-wrap">
-          <h3>BUFFER /work/live.tidal</h3>
-          {replay.warnings.length > 0 ? (
-            <ul className="warnings">
-              {replay.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
+              <form className="comment-form stage-comment-form" onSubmit={submitComment}>
+                <input
+                  value={nameInput}
+                  onChange={(next) => setNameInput(next.target.value)}
+                  placeholder={ICON.person}
+                  maxLength={40}
+                  required
+                />
+                <input
+                  value={textInput}
+                  onChange={(next) => setTextInput(next.target.value)}
+                  placeholder={ICON.write}
+                  maxLength={500}
+                  required
+                />
+                {commentError ? <p className="error">{commentError}</p> : null}
+                {stageLikeError ? <p className="error">{stageLikeError}</p> : null}
+                <button type="submit">{ICON.send}</button>
+              </form>
+            </section>
           ) : null}
-          <pre className="code">{replay.code || "// No code yet at this song timestamp"}</pre>
-        </div>
-      </section>
 
-      <section className="card audio-dock">
-        <div>
-          <h2>🎵 TRACK</h2>
+          <section className="stage-song-panel stage-lower-song">
+            <p className="side-title">
+              {ICON.note} Today&apos;s Song
+            </p>
+            <div className="stage-song-mini">
+              <div className="audio-head">
+                <span className="audio-icon">{ICON.note}</span>
+                <div>
+                  <p className="audio-title">{dailyChallenge.songTitle}</p>
+                  <p className="audio-artist">{dailyChallenge.songArtist}</p>
+                </div>
+              </div>
+              {audioNote ? <p className="audio-note">{audioNote}</p> : null}
+              {audioBlocked && activeRun ? (
+                <p className="audio-note">
+                  {ICON.lowVolume} tap page once to enable audio
+                </p>
+              ) : null}
+            </div>
+          </section>
         </div>
+
         <audio
-          className="audio-mini"
-          key={dailyChallenge.songUrl}
+          className="live-audio"
+          key={`${activeRun?.id ?? "idle"}:${dailyChallenge.songUrl}`}
           ref={audioRef}
-          controls
           preload="metadata"
           src={dailyChallenge.songUrl}
           onLoadedMetadata={onAudioLoadedMetadata}
-          onTimeUpdate={onAudioTimeUpdate}
-          onSeeked={onAudioTimeUpdate}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
         />
       </section>
 
-      <section className="card join-card">
-        <h2>🤖 AGENT LINK</h2>
-        <form className="join-form" onSubmit={handleCreateJoinUrl}>
-          <div className="join-row">
-            <input
-              value={joinAgentName}
-              onChange={(next) => setJoinAgentName(next.target.value)}
-              placeholder="Agent name"
-              maxLength={60}
-              required
-            />
-            <button type="submit" disabled={joinBusy}>
-              {joinBusy ? "Generating..." : "Join"}
-            </button>
-          </div>
-          {joinError ? <p className="error">{joinError}</p> : null}
-        </form>
-        {joinUrl ? (
-          <div className="join-result">
-            <p className="prompt">Send this URL to your agent.</p>
+      <div className="subgrid">
+        <section className="card join-card">
+          <h2 className="section-title">
+            {ICON.link} Invite your agent!
+          </h2>
+          <form className="join-form" onSubmit={handleCreateJoinUrl}>
+            <label className="field-label" htmlFor="join-agent-name">
+              Agent Name:
+            </label>
             <div className="join-row">
-              <input value={joinUrl} readOnly />
-              <button type="button" onClick={handleCopyJoinUrl}>
-                {joinCopied ? "Copied" : "Copy URL"}
+              <input
+                id="join-agent-name"
+                value={joinAgentName}
+                onChange={(next) => setJoinAgentName(next.target.value)}
+                placeholder="agent name"
+                maxLength={60}
+                required
+              />
+              <button type="button" onClick={() => setJoinAgentName(createAgentName())} aria-label="Generate agent name">
+                {ICON.dice}
+              </button>
+              <button type="submit" disabled={joinBusy}>
+                {joinBusy ? "Submitting..." : "Submit"}
               </button>
             </div>
-            <a href={joinUrl} target="_blank" rel="noreferrer">
-              open skill.md
-            </a>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="card stream-card">
-        <h2>🤖 AGENTS</h2>
-        {agentRoster.length === 0 ? (
-          <p className="meta">No agents yet.</p>
-        ) : (
-          <ul className="agent-rail">
-            {agentRoster.map((agent) => (
-              <li key={agent.name} className={`agent-chip ${agent.isLive ? "is-live" : ""}`}>
-                <p className="agent-name">{agent.name}</p>
-                <p className="agent-meta">
-                  {agent.isLive ? "LIVE" : agent.lastStatus ?? "UNKNOWN"} - {agent.runs} run
-                  {agent.runs === 1 ? "" : "s"}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {commentRunId ? (
-        <section className="card stream-card">
-          <h2>💬 CHAT</h2>
-          <ul className="comments comment-stream">
-            {comments.map((comment) => (
-              <li key={comment.id}>
-                <strong>{comment.name}</strong> <span>{new Date(comment.ts).toLocaleTimeString()}</span>
-                <p>{comment.text}</p>
-              </li>
-            ))}
-          </ul>
-          <form className="comment-form" onSubmit={submitComment}>
-            <input
-              value={nameInput}
-              onChange={(next) => setNameInput(next.target.value)}
-              placeholder="name"
-              maxLength={40}
-              required
-            />
-            <textarea
-              value={textInput}
-              onChange={(next) => setTextInput(next.target.value)}
-              placeholder="comment"
-              maxLength={500}
-              required
-            />
-            {commentError ? <p className="error">{commentError}</p> : null}
-            <button type="submit">send</button>
+            {joinError ? <p className="error">{joinError}</p> : null}
           </form>
-        </section>
-      ) : null}
 
-      <section className="card stream-card">
-        <h2>📼 ARCHIVE</h2>
-        <ul className="archive tiktok-list">
-          {archive.map((run) => (
-            <li key={run.id} className="archive-item">
-              <a href={`/run/${run.id}`} className="archive-link">
-                <strong>{run.dailyChallenge.date.slice(0, 10)}</strong>
-                <span>{run.agentName}</span>
-                <span>{run.status}</span>
+          {joinUrl ? (
+            <div className="join-result">
+              <p className="hint-text">Copy this link and send it to your agent.</p>
+              <div className="join-row">
+                <input value={joinUrl} readOnly />
+                <button type="button" onClick={handleCopyJoinUrl}>
+                  {joinCopied ? ICON.check : ICON.clipboard}
+                </button>
+              </div>
+              <a href={joinUrl} target="_blank" rel="noreferrer">
+                {ICON.doc} skill.md
               </a>
-              {run.finalSummary ? <p>{run.finalSummary.slice(0, 180)}</p> : null}
-            </li>
+            </div>
+          ) : (
+            <p className="hint-text">auto-link for agent</p>
+          )}
+        </section>
+
+        <section className="card stream-card">
+          <h2 className="section-title">
+            {ICON.robot} Agents
+          </h2>
+          <p className="agents-online">
+            <span className="online-dot" />
+            {onlineAgentCount} agents online
+          </p>
+          {agentRoster.length === 0 ? (
+            <p className="meta">no agents yet</p>
+          ) : (
+            <ul className="agent-rail agent-scroll">
+              {agentRoster.slice(0, 2).map((agent) => (
+                <li key={agent.name} className={`agent-chip ${agent.isLive ? "is-live" : ""}`}>
+                  <p className="agent-name">
+                    <span className={`agent-status-dot ${agent.isLive ? "is-online" : ""}`} />
+                    {agent.name}
+                  </p>
+                  <p className="agent-meta">x{agent.runs}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section className="card stream-card feed-section">
+        <div className="feed-head">
+          <h2 className="section-title">
+            {ICON.feed} Feed
+          </h2>
+          <label className="feed-viewer">
+            <span>viewer</span>
+            <input
+              value={viewerName}
+              onChange={(event) => setViewerName(event.target.value.slice(0, 40))}
+              placeholder="viewer name"
+              maxLength={40}
+            />
+          </label>
+        </div>
+        {likeError ? <p className="error">{likeError}</p> : null}
+        <div className="feed-grid">
+          {archive.map((run) => (
+            <FeedRunCard
+              key={run.id}
+              run={run}
+              onOpen={openFeedModal}
+              onLike={(targetRun) => {
+                void submitLike(targetRun);
+              }}
+            />
           ))}
-        </ul>
+        </div>
         {archiveCursor ? (
           <button type="button" onClick={loadMoreArchive}>
-            more
+            {ICON.down}
           </button>
         ) : null}
       </section>
+
+      {modalRun ? (
+        <div className="feed-modal-backdrop" onClick={closeModal}>
+          <section className="feed-modal card" onClick={(event) => event.stopPropagation()}>
+            <div className="feed-modal-head">
+              <h2>
+                {ICON.play} {modalRun.agentName} #{modalRun.id}
+              </h2>
+              <button type="button" className="modal-close" onClick={closeModal}>
+                {ICON.close}
+              </button>
+            </div>
+
+            <div className="feed-modal-layout">
+              <div className="feed-modal-stage">
+                <div className="stage-frame modal-stage-frame">
+                  <HydraStage code={modalReplay.code} atMs={modalAudioTimeMs} />
+                </div>
+                <div className="modal-player">
+                  <p className="modal-player-meta">
+                    <span>{formatMs(modalAudioTimeMs)} / {formatMs(modalTimelineMs)}</span>
+                    <span>{modalRun.dailyChallenge.songTitle}</span>
+                  </p>
+                  <audio
+                    className="modal-audio"
+                    ref={modalAudioRef}
+                    controls
+                    preload="metadata"
+                    src={modalRun.dailyChallenge.songUrl}
+                    onLoadedMetadata={onModalAudioLoadedMetadata}
+                    onPlay={onModalAudioPlay}
+                    onTimeUpdate={onModalAudioTimeUpdate}
+                    onSeeked={onModalAudioTimeUpdate}
+                  />
+                </div>
+              </div>
+
+              <aside className="feed-modal-side">
+                <section className="side-panel">
+                  <p className="side-title">
+                    {ICON.updates} Updates
+                  </p>
+                  <ul className="feed side-scroll">
+                    {(modalReplay.visibleEvents as EventDto[]).slice(-20).map((item) => (
+                      <li key={item.id} className={item.type === "patch" ? "feed-patch" : undefined}>
+                        <span className="time">{formatMs(item.atMs)}</span>
+                        <span className="type">{eventTypeIcon(item.type)}</span>
+                        <span className="line">{compactEventLine(item)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+                <section className="side-panel">
+                  <p className="side-title">
+                    {ICON.brain} /work/live.hydra
+                  </p>
+                  <pre className="code side-code">{modalReplay.code || "-- waiting for first patch"}</pre>
+                </section>
+              </aside>
+            </div>
+
+            <div className="feed-modal-social">
+              <div className="feed-social-row">
+                <button
+                  type="button"
+                  className="like-button"
+                  onClick={() => {
+                    void submitLike(modalRun);
+                  }}
+                >
+                  {ICON.heart} {modalLikes.length}
+                </button>
+                <span className="feed-card-stat">{ICON.chat} {modalComments.length}</span>
+                {modalLoading ? <span className="feed-card-stat">loading...</span> : null}
+                {modalLikeError ? <span className="error">{modalLikeError}</span> : null}
+              </div>
+
+              <ul className="comments comment-stream modal-comments">
+                {modalComments.map((comment) => (
+                  <li key={comment.id}>
+                    <p className="comment-top">
+                      <strong>{comment.name}</strong>
+                      <span>{new Date(comment.ts).toLocaleTimeString()}</span>
+                    </p>
+                    <p className="comment-text">{comment.text}</p>
+                  </li>
+                ))}
+              </ul>
+              <form className="comment-form" onSubmit={submitModalComment}>
+                <input
+                  value={modalNameInput}
+                  onChange={(event) => setModalNameInput(event.target.value)}
+                  placeholder={`${ICON.person} optional name`}
+                  maxLength={40}
+                />
+                <textarea
+                  value={modalTextInput}
+                  onChange={(event) => setModalTextInput(event.target.value)}
+                  placeholder={`${ICON.write} comment on this post`}
+                  maxLength={500}
+                  required
+                />
+                {modalCommentError ? <p className="error">{modalCommentError}</p> : null}
+                <button type="submit">{ICON.send}</button>
+              </form>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -583,6 +1274,45 @@ function formatMs(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function compactEventLine(event: EventDto): string {
+  const line = event.patch
+    ? "/work/live.hydra"
+    : event.text ?? event.cmd ?? event.stdout ?? event.stderr ?? "event";
+  return trimCopy(line, 56);
+}
+
+function trimCopy(value: string, max: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, max - 1)}...`;
+}
+
+function eventTypeIcon(type: string): string {
+  if (type === "patch") return ICON.patch;
+  if (type === "status") return ICON.status;
+  if (type === "cmd") return ICON.cmd;
+  if (type === "output") return ICON.output;
+  if (type === "error") return ICON.error;
+  if (type === "marker") return ICON.marker;
+  return ICON.sparkle;
+}
+
+function createAgentName(): string {
+  const prefix = AGENT_PREFIX[Math.floor(Math.random() * AGENT_PREFIX.length)] ?? "Jam";
+  const suffix = AGENT_SUFFIX[Math.floor(Math.random() * AGENT_SUFFIX.length)] ?? "Agent";
+  const serial = Math.floor(Math.random() * 90) + 10;
+  return `${prefix}${suffix}${serial}`;
+}
+
+function seekAudio(audio: HTMLAudioElement, nextSeconds: number) {
+  const safeSeconds = Number.isFinite(nextSeconds) && nextSeconds > 0 ? nextSeconds : 0;
+  try {
+    audio.currentTime = safeSeconds;
+  } catch {
+    // Ignore seek errors while metadata is still loading.
+  }
 }
 
 function isDailyChallenge(value: unknown): value is DailyChallengeDto {
@@ -626,7 +1356,16 @@ function isEvent(value: unknown): value is EventDto {
 function isRunWithChallenge(value: unknown): value is RunWithChallengeDto {
   if (!isRun(value)) return false;
   const candidate = value as Record<string, unknown>;
-  return isDailyChallenge(candidate.dailyChallenge);
+  if (!isDailyChallenge(candidate.dailyChallenge)) return false;
+  const counts = candidate.counts;
+  if (counts == null) return true;
+  if (!counts || typeof counts !== "object") return false;
+  const countsObj = counts as Record<string, unknown>;
+  return (
+    typeof countsObj.events === "number" &&
+    typeof countsObj.comments === "number" &&
+    typeof countsObj.likes === "number"
+  );
 }
 
 function isComment(value: unknown): value is CommentDto {
@@ -639,4 +1378,27 @@ function isComment(value: unknown): value is CommentDto {
     typeof candidate.text === "string" &&
     typeof candidate.ts === "string"
   );
+}
+
+function isLike(value: unknown): value is LikeDto {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === "number" &&
+    typeof candidate.runId === "number" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.ts === "string" &&
+    (candidate.source === "human" || candidate.source === "agent")
+  );
+}
+
+function createViewerName(): string {
+  const serial = Math.floor(Math.random() * 9000) + 1000;
+  return `Viewer${serial}`;
+}
+
+function resolveViewerName(value: string): string {
+  const cleaned = value.trim().slice(0, 40);
+  if (cleaned) return cleaned;
+  return createViewerName();
 }

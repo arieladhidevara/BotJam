@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getLikeCountsForRunIds } from "@/lib/likes";
 import { serializeRun } from "@/lib/serializers";
 import { badRequest } from "@/lib/validation";
 
@@ -28,6 +29,8 @@ export async function GET(
     return Response.json({ error: "Run not found" }, { status: 404 });
   }
 
+  const likeCounts = await getLikeCountsForRunIds(prisma, [run.id]);
+
   return Response.json({
     run: {
       ...serializeRun(run),
@@ -36,7 +39,10 @@ export async function GET(
         date: run.dailyChallenge.date.toISOString(),
         createdAt: run.dailyChallenge.createdAt.toISOString()
       },
-      counts: run._count
+      counts: {
+        ...run._count,
+        likes: likeCounts.get(run.id) ?? 0
+      }
     }
   });
 }

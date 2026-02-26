@@ -64,7 +64,10 @@ function applyUnifiedPatch(input: string, patch: string): PatchApplyResult {
     const oldStart = Number(match[1]);
     const oldCount = Number(match[2] ?? "1");
     const newCount = Number(match[4] ?? "1");
-    let pointer = oldStart - 1 + delta;
+    let pointer = (oldStart === 0 ? 0 : oldStart - 1) + delta;
+    if (pointer < 0) {
+      return { ok: false, reason: `Invalid hunk start near line ${oldStart}` };
+    }
     i += 1;
 
     while (i < lines.length && !lines[i].startsWith("@@")) {

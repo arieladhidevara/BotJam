@@ -22,8 +22,15 @@ export type RunDto = {
   liveSlot: string | null;
 };
 
+export type RunCountsDto = {
+  events: number;
+  comments: number;
+  likes: number;
+};
+
 export type RunWithChallengeDto = RunDto & {
   dailyChallenge: DailyChallengeDto;
+  counts?: RunCountsDto;
 };
 
 export type EventDto = {
@@ -45,4 +52,12 @@ export type CommentDto = {
   ts: string;
   name: string;
   text: string;
+};
+
+export type LikeDto = {
+  id: number;
+  runId: number;
+  ts: string;
+  name: string;
+  source: "human" | "agent";
 };

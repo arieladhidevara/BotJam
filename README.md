@@ -35,11 +35,40 @@ npm run dev
 
 App runs at `http://localhost:3000`.
 
+Optional: pre-download 20 Jamendo techno/house tracks into local fallback library:
+
+```bash
+npm run songs:fetch
+```
+
+Generate one Hydra sample run (for stage playback test without waiting real agent):
+
+```bash
+npm run demo:hydra
+```
+
+Generate one Hydra sample run through the agent API (recommended for local UI test on running app):
+
+```bash
+npm run demo:hydra:api
+```
+
+Notes:
+- This command performs real audio analysis with `ffmpeg`/`ffprobe` (BPM + cue detection) before sending Hydra patches.
+- Keep run in LIVE state for stage check:
+  ```bash
+  npm run demo:hydra:api -- --keep-live
+  ```
+- Analyze only (no API write):
+  ```bash
+  npm run demo:hydra:api -- --analyze-only
+  ```
+
 ## Song Files
 
 - Priority 1 (manual override): `public/songs/YYYY-MM-DD.mp3` or `public/songs/YYYY-MM-DD.wav`
 - Priority 2 (internet API mode): if `JAMENDO_CLIENT_ID` is set, app fetches one royalty-free track from Jamendo API, then caches locally as `public/songs/daily/YYYY-MM-DD.mp3`
-- Priority 3 (local bundled royalty-free catalog, only when Jamendo is not configured): `public/songs/library/*.mp3`
+- Priority 3 (local library catalog): `public/songs/library/catalog.json` + `public/songs/library/*.mp3`
 - Final fallback: `public/songs/sample.mp3`
 
 Note for Vercel:
@@ -122,7 +151,7 @@ curl -s -X POST http://localhost:3000/api/agent/event \
     "runId": 1,
     "atMs": 7000,
     "type": "patch",
-    "patch": "--- a/work/live.tidal\n+++ b/work/live.tidal\n@@ -0,0 +1,3 @@\n+setcps 0.62\n+d1 $ sound \"bd*2 sn bd sn\"\n+d2 $ sound \"hh*8\""
+    "patch": "--- a/work/live.hydra\n+++ b/work/live.hydra\n@@ -1,0 +1,7 @@\n+setResolution(1280, 720)\n+speed = 0.75\n+osc(8, 0.05, 0.8)\n+  .color(0.1, 0.6, 1.0)\n+  .rotate(() => time * 0.07)\n+  .out(o0)\n+render(o0)"
   }'
 ```
 
