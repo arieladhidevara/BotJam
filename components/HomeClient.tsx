@@ -116,22 +116,8 @@ export default function HomeClient(props: HomeClientProps) {
   const liveRunIdRef = useRef<number | null>(props.initialLiveRun?.id ?? null);
   const stageMutedForFeedModalRef = useRef(false);
 
-  const stageDate = dailyChallenge.date.slice(0, 10);
-  const stagedRun = useMemo(() => {
-    if (liveRun) return null;
-    return archive.find(
-      (run) => run.dailyChallenge.date.slice(0, 10) === stageDate && run.status === "FINISHED"
-    ) ?? null;
-  }, [archive, liveRun, stageDate]);
-
-  const commentRunId = useMemo(() => {
-    if (liveRun) return liveRun.id;
-    if (stagedRun) return stagedRun.id;
-    const todayRun = archive.find((run) => run.dailyChallenge.date.slice(0, 10) === stageDate);
-    return todayRun?.id ?? null;
-  }, [archive, liveRun, stagedRun, stageDate]);
-
-  const activeRun = liveRun ?? stagedRun;
+  const commentRunId = liveRun?.id ?? null;
+  const activeRun = liveRun;
   const replay = useMemo(() => replayToTime(events, audioTimeMs), [audioTimeMs, events]);
   const visibleEvents = replay.visibleEvents as EventDto[];
   const timelineDurationMs = dailyChallenge.songDurationMs ?? audioDurationMs ?? 0;
@@ -139,11 +125,7 @@ export default function HomeClient(props: HomeClientProps) {
   const modalReplay = useMemo(() => replayToTime(modalEvents, modalAudioTimeMs), [modalAudioTimeMs, modalEvents]);
   const modalTimelineMs = modalAudioDurationMs ?? modalRun?.dailyChallenge.songDurationMs ?? 0;
 
-  const audioNote = liveRun
-    ? `${ICON.speaker} LIVE playback`
-    : stagedRun
-      ? `${ICON.speaker} one-shot replay`
-      : `${ICON.pause} no live playback yet`;
+  const audioNote = liveRun ? `${ICON.speaker} LIVE playback` : `${ICON.pause} no live playback yet`;
 
   const agentRoster = useMemo(() => {
     const map = new Map<string, AgentSummary>();
@@ -354,15 +336,9 @@ export default function HomeClient(props: HomeClientProps) {
       return;
     }
 
-    if (!stagedRun) {
-      setStageStartMs(null);
-      setAudioTimeMs(0);
-      return;
-    }
-
-    setStageStartMs(Date.now());
+    setStageStartMs(null);
     setAudioTimeMs(0);
-  }, [liveRun?.id, liveRun?.runStartAtMs, stagedRun?.id]);
+  }, [liveRun?.id, liveRun?.runStartAtMs]);
 
   useEffect(() => {
     if (!activeRun || stageStartMs == null) return;
@@ -612,15 +588,16 @@ export default function HomeClient(props: HomeClientProps) {
       return;
     }
 
-    const like = payload?.like;
     const duplicate = Boolean(payload?.duplicate);
-    if (!duplicate && isLike(like)) {
-      setModalLikes((previous) => {
-        if (previous.some((item) => item.id === like.id)) return previous;
-        return [like, ...previous];
-      });
-      syncRunCounts(run.id, undefined, undefined, true);
+    if (duplicate) {
+      const message = "You already liked this post.";
+      setLikeError(message);
+      if (modalRun?.id === run.id) {
+        setModalLikeError(message);
+      }
     }
+
+    await refreshRunLikes(run.id);
   }
 
   function syncRunCounts(
@@ -724,19 +701,23 @@ export default function HomeClient(props: HomeClientProps) {
     }
 
     if (payload?.duplicate) {
-      return;
-    }
-
-    const like = payload?.like;
-    if (isLike(like)) {
-      setStageLikes((previous) => {
-        if (previous.some((item) => item.id === like.id)) return previous;
-        return [like, ...previous];
-      });
-      return;
+      setStageLikeError("You already liked this live run.");
     }
 
     await loadStageSocial(commentRunId);
+  }
+
+  async function refreshRunLikes(runId: number) {
+    const response = await fetch(`/api/runs/${runId}/likes`, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = safeJson(await response.text());
+    if (!payload) return;
+
+    const nextLikes = Array.isArray(payload.likes) ? payload.likes.filter(isLike) : [];
+    if (modalRun?.id === runId) {
+      setModalLikes(nextLikes);
+    }
+    syncRunCounts(runId, undefined, nextLikes.length);
   }
 
   async function submitModalComment(event: FormEvent) {
@@ -906,7 +887,8 @@ export default function HomeClient(props: HomeClientProps) {
                   <HydraStage code={replay.code} atMs={audioTimeMs} />
                 ) : (
                   <div className="stage-placeholder">
-                    {!liveRun ? <p>{ICON.robot} Main Stage is available!</p> : null}
+                    <p className="stage-placeholder-main">The stage is yours!</p>
+                    <p className="stage-placeholder-sub">Ask your agent to perform!</p>
                   </div>
                 )}
                 {audioBlocked && activeRun ? (
