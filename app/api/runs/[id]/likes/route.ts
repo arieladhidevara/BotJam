@@ -1,6 +1,6 @@
 import { authenticateAgent, getClientIp } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { createRunLike, listRunLikes } from "@/lib/likes";
+import { createRunLike, isLikeStorageNotReadyError, listRunLikes } from "@/lib/likes";
 import { RATE_LIMITS, rateLimiter } from "@/lib/rate-limit";
 import { LIMITS, badRequest, parseLikeSource, trimAndValidate } from "@/lib/validation";
 
@@ -16,9 +16,18 @@ export async function GET(
     return badRequest("Invalid run id");
   }
 
-  return Response.json({
-    likes: await listRunLikes(prisma, runId).catch(() => [])
-  });
+  try {
+    return Response.json({
+      likes: await listRunLikes(prisma, runId)
+    });
+  } catch (error) {
+    if (!isLikeStorageNotReadyError(error)) {
+      console.error(`Failed to list likes for run ${runId}`, error);
+    }
+    return Response.json({
+      likes: []
+    });
+  }
 }
 
 export async function POST(
@@ -65,7 +74,11 @@ export async function POST(
   try {
     const result = await createRunLike(prisma, runId, actorName, source);
     return Response.json(result);
-  } catch {
-    return Response.json({ error: "Likes are not ready yet. Run migrations first." }, { status: 503 });
+  } catch (error) {
+    if (isLikeStorageNotReadyError(error)) {
+      return Response.json({ error: "Likes are not ready yet. Run migrations first." }, { status: 503 });
+    }
+    console.error(`Failed to create like for run ${runId}`, error);
+    return Response.json({ error: "Failed to save like" }, { status: 500 });
   }
 }

@@ -1,19 +1,6 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient, RunLike } from "@prisma/client";
 
 import type { LikeDto } from "@/lib/types";
-
-type RawLikeRow = {
-  id: number;
-  runId: number;
-  name: string;
-  source: string;
-  ts: Date;
-};
-
-type RawCountRow = {
-  runId: number;
-  count: bigint | number;
-};
 
 export async function getLikeCountsForRunIds(
   client: PrismaClient,
@@ -22,38 +9,32 @@ export async function getLikeCountsForRunIds(
   const counts = new Map<number, number>();
   if (runIds.length === 0) return counts;
 
-  let rows: RawCountRow[] = [];
   try {
-    rows = await client.$queryRaw<RawCountRow[]>(
-      Prisma.sql`
-        SELECT "runId", COUNT(*)::bigint AS "count"
-        FROM "RunLike"
-        WHERE "runId" IN (${Prisma.join(runIds)})
-        GROUP BY "runId"
-      `
-    );
-  } catch {
-    return counts;
-  }
+    const rows = await client.runLike.groupBy({
+      by: ["runId"],
+      where: { runId: { in: runIds } },
+      _count: { _all: true }
+    });
 
-  for (const row of rows) {
-    counts.set(row.runId, Number(row.count));
+    for (const row of rows) {
+      counts.set(row.runId, row._count._all);
+    }
+  } catch (error) {
+    if (!isLikeStorageNotReadyError(error)) {
+      console.error("Failed to read like counts", error);
+    }
+    return counts;
   }
 
   return counts;
 }
 
 export async function listRunLikes(client: PrismaClient, runId: number): Promise<LikeDto[]> {
-  const rows = await client.$queryRaw<RawLikeRow[]>(
-    Prisma.sql`
-      SELECT "id", "runId", "name", "source", "ts"
-      FROM "RunLike"
-      WHERE "runId" = ${runId}
-      ORDER BY "id" DESC
-    `
-  );
-
-  return rows.map(serializeLikeRow);
+  const rows = await client.runLike.findMany({
+    where: { runId },
+    orderBy: { id: "desc" }
+  });
+  return rows.map((row) => serializeLikeRow(row));
 }
 
 export async function createRunLike(
@@ -62,37 +43,70 @@ export async function createRunLike(
   name: string,
   source: "human" | "agent"
 ): Promise<{ like: LikeDto; duplicate: boolean }> {
-  const inserted = await client.$queryRaw<RawLikeRow[]>(
-    Prisma.sql`
-      INSERT INTO "RunLike" ("runId", "name", "source")
-      VALUES (${runId}, ${name}, ${source}::"LikeSource")
-      ON CONFLICT ("runId", "source", "name")
-      DO NOTHING
-      RETURNING "id", "runId", "name", "source", "ts"
-    `
-  );
-
-  if (inserted.length > 0) {
-    return { like: serializeLikeRow(inserted[0]), duplicate: false };
+  try {
+    const inserted = await client.runLike.create({
+      data: {
+        runId,
+        name,
+        source
+      }
+    });
+    return { like: serializeLikeRow(inserted), duplicate: false };
+  } catch (error) {
+    if (!isLikeDuplicateError(error)) {
+      throw error;
+    }
   }
 
-  const existing = await client.$queryRaw<RawLikeRow[]>(
-    Prisma.sql`
-      SELECT "id", "runId", "name", "source", "ts"
-      FROM "RunLike"
-      WHERE "runId" = ${runId} AND "source" = ${source}::"LikeSource" AND "name" = ${name}
-      LIMIT 1
-    `
-  );
+  const existing = await client.runLike.findUnique({
+    where: {
+      runId_source_name: {
+        runId,
+        source,
+        name
+      }
+    }
+  });
 
-  if (existing.length === 0) {
+  if (!existing) {
     throw new Error("Could not load existing like after conflict");
   }
 
-  return { like: serializeLikeRow(existing[0]), duplicate: true };
+  return { like: serializeLikeRow(existing), duplicate: true };
 }
 
-function serializeLikeRow(row: RawLikeRow): LikeDto {
+export function isLikeStorageNotReadyError(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return (
+      error.code === "P2021" ||
+      error.code === "P2022" ||
+      error.code === "P2010"
+    );
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("runlike") &&
+      (
+        message.includes("does not exist") ||
+        message.includes("relation") ||
+        message.includes("table")
+      )
+    );
+  }
+
+  return false;
+}
+
+function isLikeDuplicateError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
+}
+
+function serializeLikeRow(row: Pick<RunLike, "id" | "runId" | "name" | "source" | "ts">): LikeDto {
   return {
     id: row.id,
     runId: row.runId,
