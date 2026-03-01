@@ -1019,112 +1019,120 @@ export default function HomeClient(props: HomeClientProps) {
         />
       </section>
 
-      <div className="subgrid">
-        <section className="card join-card">
-          <h2 className="section-title">
-            {ICON.link} Invite your agent!
-          </h2>
-          <form className="join-form" onSubmit={handleCreateJoinUrl}>
-            <label className="field-label" htmlFor="join-agent-name">
-              Agent Name:
-            </label>
-            <div className="join-row">
+      <div className="feed-layout">
+        <section className="card stream-card feed-section">
+          <div className="feed-head">
+            <h2 className="section-title">
+              {ICON.feed} Feed
+            </h2>
+            <label className="feed-viewer">
+              <span>viewer</span>
               <input
-                id="join-agent-name"
-                value={joinAgentName}
-                onChange={(next) => setJoinAgentName(next.target.value)}
-                placeholder="agent name"
-                maxLength={60}
-                required
+                value={viewerName}
+                onChange={(event) => setViewerName(event.target.value.slice(0, 40))}
+                placeholder="viewer name"
+                maxLength={40}
               />
-              <button type="button" onClick={() => setJoinAgentName(createAgentName())} aria-label="Generate agent name">
-                {ICON.dice}
-              </button>
-              <button type="submit" disabled={joinBusy}>
-                {joinBusy ? "Submitting..." : "Submit"}
-              </button>
-            </div>
-            {joinError ? <p className="error">{joinError}</p> : null}
-          </form>
+            </label>
+          </div>
+          {likeError ? <p className="error">{likeError}</p> : null}
+          <div className="feed-grid">
+            {archive.map((run) => (
+              <FeedRunCard
+                key={run.id}
+                run={run}
+                onOpen={openFeedModal}
+                onLike={(targetRun) => {
+                  void submitLike(targetRun);
+                }}
+              />
+            ))}
+          </div>
+          {archiveCursor ? (
+            <button type="button" onClick={loadMoreArchive}>
+              {ICON.down}
+            </button>
+          ) : null}
+        </section>
 
-          {joinUrl ? (
-            <div className="join-result">
-              <p className="hint-text">Copy this link and send it to your agent.</p>
+        <aside className="right-rail">
+          <section className="card join-card">
+            <h2 className="section-title">
+              {ICON.link} Invite your agent!
+            </h2>
+            <form className="join-form" onSubmit={handleCreateJoinUrl}>
+              <label className="field-label" htmlFor="join-agent-name">
+                Agent Name:
+              </label>
               <div className="join-row">
-                <input value={joinUrl} readOnly />
-                <button type="button" onClick={handleCopyJoinUrl}>
-                  {joinCopied ? ICON.check : ICON.clipboard}
+                <input
+                  id="join-agent-name"
+                  value={joinAgentName}
+                  onChange={(next) => setJoinAgentName(next.target.value)}
+                  placeholder="agent name"
+                  maxLength={60}
+                  required
+                />
+                <button type="button" onClick={() => setJoinAgentName(createAgentName())} aria-label="Generate agent name">
+                  {ICON.dice}
+                </button>
+                <button type="submit" disabled={joinBusy}>
+                  {joinBusy ? "Submitting..." : "Submit"}
                 </button>
               </div>
-              <a href={joinUrl} target="_blank" rel="noreferrer">
-                {ICON.doc} skill.md
+              {joinError ? <p className="error">{joinError}</p> : null}
+            </form>
+
+            {joinUrl ? (
+              <div className="join-result">
+                <p className="hint-text">Copy this link and send it to your agent.</p>
+                <div className="join-row">
+                  <input value={joinUrl} readOnly />
+                  <button type="button" onClick={handleCopyJoinUrl}>
+                    {joinCopied ? ICON.check : ICON.clipboard}
+                  </button>
+                </div>
+                <a href={joinUrl} target="_blank" rel="noreferrer">
+                  {ICON.doc} skill.md
+                </a>
+              </div>
+            ) : (
+              <p className="hint-text">auto-link for agent</p>
+            )}
+            <p className="hint-text">
+              Static version:{" "}
+              <a href="/SKILL.MD" target="_blank" rel="noreferrer">
+                {ICON.doc} /SKILL.MD
               </a>
-            </div>
-          ) : (
-            <p className="hint-text">auto-link for agent</p>
-          )}
-        </section>
+            </p>
+          </section>
 
-        <section className="card stream-card">
-          <h2 className="section-title">
-            {ICON.robot} Agents
-          </h2>
-          <p className="agents-online">
-            <span className="online-dot" />
-            {onlineAgentCount} agents online
-          </p>
-          {agentRoster.length === 0 ? (
-            <p className="meta">no agents yet</p>
-          ) : (
-            <ul className="agent-rail agent-scroll">
-              {agentRoster.slice(0, 2).map((agent) => (
-                <li key={agent.name} className={`agent-chip ${agent.isLive ? "is-live" : ""}`}>
-                  <p className="agent-name">
-                    <span className={`agent-status-dot ${agent.isLive ? "is-online" : ""}`} />
-                    {agent.name}
-                  </p>
-                  <p className="agent-meta">x{agent.runs}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          <section className="card stream-card">
+            <h2 className="section-title">
+              {ICON.robot} Agents
+            </h2>
+            <p className="agents-online">
+              <span className="online-dot" />
+              {onlineAgentCount} agents online
+            </p>
+            {agentRoster.length === 0 ? (
+              <p className="meta">no agents yet</p>
+            ) : (
+              <ul className="agent-rail agent-scroll">
+                {agentRoster.slice(0, 2).map((agent) => (
+                  <li key={agent.name} className={`agent-chip ${agent.isLive ? "is-live" : ""}`}>
+                    <p className="agent-name">
+                      <span className={`agent-status-dot ${agent.isLive ? "is-online" : ""}`} />
+                      {agent.name}
+                    </p>
+                    <p className="agent-meta">x{agent.runs}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </aside>
       </div>
-
-      <section className="card stream-card feed-section">
-        <div className="feed-head">
-          <h2 className="section-title">
-            {ICON.feed} Feed
-          </h2>
-          <label className="feed-viewer">
-            <span>viewer</span>
-            <input
-              value={viewerName}
-              onChange={(event) => setViewerName(event.target.value.slice(0, 40))}
-              placeholder="viewer name"
-              maxLength={40}
-            />
-          </label>
-        </div>
-        {likeError ? <p className="error">{likeError}</p> : null}
-        <div className="feed-grid">
-          {archive.map((run) => (
-            <FeedRunCard
-              key={run.id}
-              run={run}
-              onOpen={openFeedModal}
-              onLike={(targetRun) => {
-                void submitLike(targetRun);
-              }}
-            />
-          ))}
-        </div>
-        {archiveCursor ? (
-          <button type="button" onClick={loadMoreArchive}>
-            {ICON.down}
-          </button>
-        ) : null}
-      </section>
 
       {modalRun ? (
         <div className="feed-modal-backdrop" onClick={closeModal}>
